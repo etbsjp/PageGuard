@@ -41,6 +41,7 @@
 	var password    = document.getElementById( 'pggd_password' );
 	var warning     = document.getElementById( 'pggd-unprotect-warning' );
 	var stateBox    = document.getElementById( 'pggd-state' );
+	var stateLive   = document.getElementById( 'pggd-state-live' );
 	var passLabel   = document.getElementById( 'pggd-password-label' );
 	var passDesc    = document.getElementById( 'pggd-password-description' );
 	var passActions = document.getElementById( 'pggd-password-actions' );
@@ -52,6 +53,8 @@
 	// 保存後の状態を取得できなかった場合に立てる。
 	// 手元の isProtected / hasCredential が当てにならない以上、検証もできない。
 	var stateUnknown   = false;
+	// 前回の保存で出した通知の id。次の保存で不要になったものを消すために持つ。
+	var shownNoticeIds = [];
 
 	/**
 	 * 前後の空白を落とす。
@@ -431,6 +434,27 @@
 	 * 状態が分からなくなったことを画面に出す。
 	 * 知らない状態を断定表示させない（古い表示を残すと嘘をつき続ける）。
 	 */
+	/**
+	 * 常駐しているライブリージョンへ読み上げたい文を流し込む。
+	 *
+	 * ライブリージョンの要素そのものを作り直すと読み上げられないため、
+	 * 要素は置き換えず textContent だけを差し替える。
+	 */
+	function announce( text ) {
+		if ( ! stateLive ) {
+			return;
+		}
+		stateLive.textContent = text || '';
+	}
+
+	/**
+	 * 状態表示の中から、状態を表す1文を取り出す。
+	 */
+	function readStatusLine() {
+		var line = stateBox ? stateBox.querySelector( '.pggd-status-line' ) : null;
+		return line ? line.textContent.replace( /\s+/g, ' ' ).replace( /^ | $/g, '' ) : '';
+	}
+
 	function showStateFailure( message ) {
 		/*
 		 * 状態が分からなくなった以上、手元の isProtected / hasCredential も
@@ -456,13 +480,9 @@
 		var wrapper = document.createElement( 'div' );
 		wrapper.className = 'notice notice-warning inline pggd-state-note';
 
-		// 読み上げの対象は文章だけ。操作要素はこの外に置く。
-		var live = document.createElement( 'div' );
-		live.setAttribute( 'role', 'status' );
 		var text = document.createElement( 'p' );
 		text.textContent = message || i18n.stateFailed || '';
-		live.appendChild( text );
-		wrapper.appendChild( live );
+		wrapper.appendChild( text );
 
 		var actions = document.createElement( 'p' );
 		var reload  = document.createElement( 'button' );
@@ -477,6 +497,9 @@
 
 		stateBox.innerHTML = '';
 		stateBox.appendChild( wrapper );
+
+		// 差し替えたことを、常駐しているライブリージョン経由で知らせる。
+		announce( text.textContent );
 	}
 
 	/**
@@ -487,14 +510,16 @@
 	 * 成功系は snackbar にして数秒で消す。コアの「更新しました」と同じ扱い。
 	 */
 	function showSavedNotices( notices ) {
-		if ( ! notices || ! notices.length ) {
-			return;
-		}
 		var dispatchNotices = getStore( 'core/notices', 'dispatch' );
 		if ( ! dispatchNotices || 'function' !== typeof dispatchNotices.createNotice ) {
 			return;
 		}
+
+		notices = notices || [];
+
+		var nextIds = [];
 		var index;
+
 		for ( index = 0; index < notices.length; index++ ) {
 			dispatchNotices.createNotice(
 				notices[ index ].status,
@@ -505,7 +530,23 @@
 					isDismissible: true
 				}
 			);
+			nextIds.push( notices[ index ].id );
 		}
+
+		/*
+		 * 前回の保存で出した通知のうち、今回出ていないものを消す。
+		 * id が違うと置き換わらないため、例えば「解除しました」の警告が
+		 * 出たまま再び保護しても残り続け、いま何が起きたのか読めなくなる。
+		 */
+		if ( 'function' === typeof dispatchNotices.removeNotice ) {
+			for ( index = 0; index < shownNoticeIds.length; index++ ) {
+				if ( -1 === nextIds.indexOf( shownNoticeIds[ index ] ) ) {
+					dispatchNotices.removeNotice( shownNoticeIds[ index ] );
+				}
+			}
+		}
+
+		shownNoticeIds = nextIds;
 	}
 
 	function refreshState() {
@@ -548,6 +589,8 @@
 			if ( stateBox ) {
 				stateBox.innerHTML = result.data.state;
 				injectCopyButton();
+				// 差し替えた状態文を、常駐しているライブリージョンへ流し込む。
+				announce( readStatusLine() );
 			}
 			if ( passLabel ) {
 				passLabel.textContent = result.data.passwordLabel;

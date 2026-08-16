@@ -121,13 +121,16 @@ class Pggd_Auth {
 		}
 
 		if ( Pggd_Credentials::verify( $target_id, $submitted['username'], $submitted['password'] ) ) {
-			// 成功したら失敗回数を消す。
-			Pggd_Lockout::clear( $ip );
+			// 成功したら、このページぶんの失敗回数だけを消す。
+			// アクセス元の記録ごと消すと、別のページの回数まで 0 に戻り、
+			// 「資格情報を知っているページへ成功しに行く」だけで
+			// 総当たりの回数制限を回避できてしまう。
+			Pggd_Lockout::clear( $ip, $target_id );
 			return;
 		}
 
 		// 失敗を記録し、この失敗でロックに達したらロック応答へ切り替える。
-		if ( Pggd_Lockout::record_failure( $ip ) ) {
+		if ( Pggd_Lockout::record_failure( $ip, $target_id ) ) {
 			self::send_locked( $target_id, Pggd_Lockout::get_unlock_time( $ip ) );
 		}
 

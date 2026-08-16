@@ -1,6 +1,6 @@
 <?php
 /**
- * IP 単位の失敗回数ロック（総当たり対策）。
+ * アクセス元単位の失敗回数ロック（総当たり対策）。
  *
  * docs/spec.md 7。ロック解除の管理画面 UI は別 issue のスコープ。
  *
@@ -14,14 +14,29 @@
  *     追いつかず行が積み上がる。1本にまとめて上限を設ければ頭打ちになる。
  *  2. 後続 issue の「ロック中 IP の一覧・解除」画面が、この配列を読むだけで作れる。
  *
+ * ■ 失敗回数はページごとに数える
+ *
+ * 回数をアクセス元ごとに1つだけ持つと、認証成功で記録を消す処理と噛み合って
+ * 制限を回避できてしまう。このプラグインは「ページごとに違う資格情報を配る」
+ * ものなので、次が現実に成立する。
+ *
+ *   1. ページ A の資格情報を正規に持っている人が
+ *   2. ページ B へ誤ったパスワードで4回試し
+ *   3. ページ A へ正しく認証して回数を 0 に戻し
+ *   4. 2 へ戻る
+ *
+ * これでは 5 回目に到達せず、ページ B を無制限に試せる。
+ * そのため回数は投稿IDごとに持ち、認証成功で消すのは
+ * 「そのページぶんの回数」だけにしている。ロックはアクセス元全体に掛ける。
+ *
  * ■ 保存形式
  *
  *  array(
  *    '<送信元のハッシュ>' => array(
- *      'ip'       => '203.0.113.9', // 解除画面で人が読むために持つ
- *      'failures' => 3,             // 現在の失敗回数（ロック成立時に 0 へ戻す）
- *      'locked'   => 0,             // ロックが解ける UNIX time。0 ならロックしていない
- *      'expires'  => 1760000900,    // このレコードを捨ててよくなる UNIX time
+ *      'ip'       => '203.0.113.9',   // 解除画面で人が読むために持つ
+ *      'failures' => array( 12 => 3 ), // 投稿ID => 失敗回数
+ *      'locked'   => 0,               // ロックが解ける UNIX time。0 ならロックしていない
+ *      'expires'  => 1760000900,      // このレコードを捨ててよくなる UNIX time
  *    ),
  *  )
  *
@@ -33,7 +48,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * IP 単位の失敗回数ロック。
+ * アクセス元単位の失敗回数ロック。
  */
 class Pggd_Lockout {
 
@@ -43,12 +58,22 @@ class Pggd_Lockout {
 	const OPTION = 'pggd_lockouts';
 
 	/**
-	 * 保持するレコードの上限件数。
+	 * 保持するレコードの上限件数（＝アクセス元の数）。
 	 *
 	 * 超えた場合はロックしていないものから捨てる。
-	 * 1レコードは 100 バイト前後なので、上限に達しても数十 KB に収まる。
+	 * 未認証のリクエストだけで options の行を増やされないための蓋。
 	 */
 	const MAX_ENTRIES = 500;
+
+	/**
+	 * 1つのアクセス元について、同時に回数を数えるページ数の上限。
+	 *
+	 * 回数をページごとに持つとレコードが太りうるので上限を設ける。
+	 * ただし超えた分を捨てると、多数のページを巡回して古い回数を
+	 * 押し出す回避路になる。捨てずにロックする。
+	 * これだけのページを短時間に失敗して回るのは正規の利用ではない。
+	 */
+	const MAX_POSTS_PER_SOURCE = 20;
 
 	/**
 	 * 書き込み競合時にやり直す回数。
@@ -100,7 +125,42 @@ class Pggd_Lockout {
 	}
 
 	/**
-	 * IP からレコードのキーを組み立てる。
+	 * アクセス元を表す文字列に正規化する。
+	 *
+	 * IPv6 はアドレス1つを鍵にすると意味がない。
+	 * 一般的な割り当ては /64 単位で、その中のアドレスは自由に変えられるため、
+	 * アドレス全体で数えると 5 回制限を素通りできるうえ、
+	 * 別アドレスを名乗り続けてレコードの上限を溢れさせ、
+	 * 他のロック記録を押し出すこともできる。/64 に丸めて数える。
+	 *
+	 * @param string $ip IP アドレス。
+	 * @return string 正規化した文字列。
+	 */
+	private static function normalize_ip( $ip ) {
+		$ip = (string) $ip;
+
+		if ( '' === $ip ) {
+			// IP が取れない環境（CLI 等）は一つのバケットにまとめる。
+			return 'unknown';
+		}
+
+		if ( ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ) {
+			return $ip; // IPv4 はそのまま。
+		}
+
+		$packed = inet_pton( $ip );
+		if ( false === $packed || 16 !== strlen( $packed ) ) {
+			return $ip;
+		}
+
+		// 上位 64 ビットだけ残して下位を 0 で埋める。
+		$prefix = inet_ntop( substr( $packed, 0, 8 ) . str_repeat( "\0", 8 ) );
+
+		return ( false === $prefix ) ? $ip : $prefix . '/64';
+	}
+
+	/**
+	 * アクセス元からレコードのキーを組み立てる。
 	 *
 	 * IP をそのままキーにすると、オプションの中身を覗いただけで
 	 * 接続元の一覧が読めてしまう。ソルト付きハッシュで固定長にする。
@@ -109,9 +169,7 @@ class Pggd_Lockout {
 	 * @return string レコードのキー。
 	 */
 	private static function build_key( $ip ) {
-		// IP が取れない環境（CLI 等）は一つのバケットにまとめる。
-		$source = '' !== $ip ? $ip : 'unknown';
-		return substr( hash( 'sha256', $source . '|' . wp_salt( 'auth' ) ), 0, 32 );
+		return substr( hash( 'sha256', self::normalize_ip( $ip ) . '|' . wp_salt( 'auth' ) ), 0, 32 );
 	}
 
 	/**
@@ -213,6 +271,28 @@ class Pggd_Lockout {
 	}
 
 	/**
+	 * レコード1件を、欠けた項目を補った形に整える。
+	 *
+	 * @param mixed  $record レコード。
+	 * @param string $ip     アクセス元（新規作成時に使う）。
+	 * @return array 整えたレコード。
+	 */
+	private static function normalize_record( $record, $ip ) {
+		if ( ! is_array( $record ) ) {
+			$record = array();
+		}
+
+		$failures = isset( $record['failures'] ) && is_array( $record['failures'] ) ? $record['failures'] : array();
+
+		return array(
+			'ip'       => isset( $record['ip'] ) ? (string) $record['ip'] : self::normalize_ip( $ip ),
+			'failures' => $failures,
+			'locked'   => isset( $record['locked'] ) ? (int) $record['locked'] : 0,
+			'expires'  => isset( $record['expires'] ) ? (int) $record['expires'] : 0,
+		);
+	}
+
+	/**
 	 * 期限切れのレコードを捨て、件数を上限内に収める。
 	 *
 	 * @param array $records レコード配列。
@@ -303,6 +383,12 @@ class Pggd_Lockout {
 		if ( ! isset( $records[ $key ] ) || ! is_array( $records[ $key ] ) ) {
 			return null;
 		}
+		// 壊れた記録で警告を出さない。未認証アクセスのたびに警告が出ると、
+		// WP_DEBUG_DISPLAY が有効な環境では 401 のヘッダより先に出力され、
+		// 認証を要求できなくなる。
+		if ( ! isset( $records[ $key ]['expires'] ) ) {
+			return null;
+		}
 		if ( (int) $records[ $key ]['expires'] <= time() ) {
 			return null;
 		}
@@ -312,6 +398,8 @@ class Pggd_Lockout {
 
 	/**
 	 * 現在ロック中かを返す。
+	 *
+	 * ロックはアクセス元全体に掛かる（ページ単位ではない）。
 	 *
 	 * @param string $ip IP アドレス。
 	 * @return bool ロック中なら true。
@@ -342,46 +430,54 @@ class Pggd_Lockout {
 	/**
 	 * 認証失敗を1回記録する。
 	 *
-	 * 規定回数に達したらロックを立て、失敗回数は 0 に戻す。
+	 * 回数は投稿IDごとに数え、規定回数に達したらアクセス元全体をロックする。
 	 * ロック中は何も書き込まない（書くとロックが延び続けて事実上の恒久ロックになる）。
 	 *
-	 * @param string $ip IP アドレス。
+	 * @param string $ip      IP アドレス。
+	 * @param int    $post_id 認証に失敗した投稿ID。
 	 * @return bool 呼び出し後にロック状態なら true。
 	 */
-	public static function record_failure( $ip ) {
+	public static function record_failure( $ip, $post_id ) {
 		$max     = pggd_get_max_attempts();
 		$seconds = pggd_get_lockout_seconds();
 		$key     = self::build_key( $ip );
+		$post_id = (int) $post_id;
 
 		for ( $attempt = 0; $attempt < self::WRITE_RETRIES; $attempt++ ) {
 			$now     = time();
 			$raw     = self::read_raw();
 			$records = self::prune( self::decode( $raw ) );
 
-			$record = isset( $records[ $key ] ) && is_array( $records[ $key ] )
-				? $records[ $key ]
-				: array(
-					'ip'       => $ip,
-					'failures' => 0,
-					'locked'   => 0,
-					'expires'  => 0,
-				);
+			$record = self::normalize_record(
+				isset( $records[ $key ] ) ? $records[ $key ] : null,
+				$ip
+			);
 
 			// 既にロック中なら数え直さない。
-			if ( isset( $record['locked'] ) && (int) $record['locked'] > $now ) {
+			if ( $record['locked'] > $now ) {
 				return true;
 			}
 
-			$failures = (int) $record['failures'] + 1;
-			$locked   = 0;
+			$failures              = $record['failures'];
+			$count                 = isset( $failures[ $post_id ] ) ? (int) $failures[ $post_id ] + 1 : 1;
+			$failures[ $post_id ]  = $count;
 
-			if ( $failures >= $max ) {
-				$locked   = $now + $seconds;
-				$failures = 0; // ロック解除後は 0 から数え直す。
+			$locked = 0;
+			if ( $count >= $max ) {
+				$locked = $now + $seconds;
+			} elseif ( count( $failures ) > self::MAX_POSTS_PER_SOURCE ) {
+				// 短時間に多数のページを失敗して回るのは正規の利用ではない。
+				// 古い回数を捨てて回避路を作るより、ここでロックするほうが安全。
+				$locked = $now + $seconds;
+			}
+
+			if ( $locked > 0 ) {
+				// ロック解除後は 0 から数え直す。
+				$failures = array();
 			}
 
 			$records[ $key ] = array(
-				'ip'       => $ip,
+				'ip'       => self::normalize_ip( $ip ),
 				'failures' => $failures,
 				'locked'   => $locked,
 				// ロック中はロックが解けるまで、そうでなければ失敗の計上期間ぶん保持する。
@@ -406,13 +502,19 @@ class Pggd_Lockout {
 	}
 
 	/**
-	 * 送信元の記録を消す（認証成功時に呼ぶ）。
+	 * そのページぶんの失敗回数を消す（認証成功時に呼ぶ）。
 	 *
-	 * @param string $ip IP アドレス。
+	 * 消すのは指定したページの回数だけで、他のページの回数もロックも残す。
+	 * ここでレコードごと消すと、ページ A の資格情報を持っている人が
+	 * ページ B の回数を好きなだけ 0 に戻せる（回避路になる）。
+	 *
+	 * @param string $ip      IP アドレス。
+	 * @param int    $post_id 認証に成功した投稿ID。
 	 * @return void
 	 */
-	public static function clear( $ip ) {
-		$key = self::build_key( $ip );
+	public static function clear( $ip, $post_id ) {
+		$key     = self::build_key( $ip );
+		$post_id = (int) $post_id;
 
 		for ( $attempt = 0; $attempt < self::WRITE_RETRIES; $attempt++ ) {
 			$raw     = self::read_raw();
@@ -422,10 +524,23 @@ class Pggd_Lockout {
 				return; // 記録が無いので何もしなくてよい。
 			}
 
-			unset( $records[ $key ] );
-			$records = self::prune( $records );
+			$record = self::normalize_record( $records[ $key ], $ip );
 
-			$result = self::write( $raw, $records );
+			if ( ! isset( $record['failures'][ $post_id ] ) ) {
+				return; // このページぶんの回数は無い。書き込む必要がない。
+			}
+
+			unset( $record['failures'][ $post_id ] );
+
+			if ( empty( $record['failures'] ) && $record['locked'] <= time() ) {
+				// 数えるものもロックも無くなったレコードは残さない。
+				unset( $records[ $key ] );
+			} else {
+				$records[ $key ] = $record;
+			}
+
+			$records = self::prune( $records );
+			$result  = self::write( $raw, $records );
 
 			if ( self::WRITE_OK === $result || self::WRITE_DB_ERROR === $result ) {
 				return;

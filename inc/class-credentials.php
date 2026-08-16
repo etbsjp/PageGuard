@@ -163,6 +163,32 @@ class Pggd_Credentials {
 		// 一覧を meta_query で引くための索引を立てる。
 		update_post_meta( $post_id, self::META_PROTECTED, '1' );
 
+		/*
+		 * 書き込めたことを読み戻して確かめる。
+		 *
+		 * update_post_meta() の戻り値だけでは判定できない。あの関数は
+		 * 「値が変わらなかった」ときにも false を返すため、失敗と区別が付かない。
+		 * 逆に戻り値を見ずに true を返すと、書き込みに失敗しても画面には
+		 * 「保護しました」と出て、利用者が無保護のページの URL を配ることになる。
+		 *
+		 * 書き込みが失敗した場合、update_metadata() はメタのキャッシュを
+		 * 更新しないため、ここで読み戻すと古い値が返り、食い違いを検出できる。
+		 */
+		$saved = self::get_all( $post_id );
+
+		if ( ! isset( $saved[0] ) ) {
+			return false;
+		}
+		if ( ! hash_equals( $credentials[0]['password_hash'], $saved[0]['password_hash'] ) ) {
+			return false;
+		}
+		if ( ! hash_equals( $credentials[0]['username'], $saved[0]['username'] ) ) {
+			return false;
+		}
+		if ( '1' !== (string) get_post_meta( $post_id, self::META_PROTECTED, true ) ) {
+			return false;
+		}
+
 		return true;
 	}
 

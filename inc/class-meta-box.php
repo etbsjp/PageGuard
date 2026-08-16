@@ -165,15 +165,15 @@ class Pggd_Meta_Box {
 		$permalink    = get_permalink( $post );
 
 		/*
-		 * 読み上げの対象は状態を表す1文だけに絞る。
-		 * 下の確認案内まで囲むと、保存のたびに4段落と URL が読み上げられる。
-		 * 操作要素（コピーボタン等）もこの外に置くこと。
-		 * ライブリージョンの読み上げはフォーカスを移さないため、
-		 * 中にボタンがあっても、そこへ到達する手段が案内されない。
+		 * ここに role="status" は付けない。
+		 * この出力ごと innerHTML で差し替えるため、ライブリージョン自体が
+		 * 毎回作り直される形になり、多くのスクリーンリーダーが読み上げない。
+		 * 読み上げ用の空のライブリージョンは #pggd-state-live に常駐させてあり、
+		 * JavaScript がそこへ状態文だけを流し込む（render() を参照）。
 		 */
 		if ( ! $is_protected ) {
 			?>
-			<div class="pggd-status" role="status">
+			<div class="pggd-status">
 				<p class="pggd-status-line">
 					<span class="dashicons dashicons-unlock" aria-hidden="true"></span>
 					<strong><?php esc_html_e( 'このページは BASIC 認証で保護されていません。', 'pageguard' ); ?></strong>
@@ -183,7 +183,7 @@ class Pggd_Meta_Box {
 			return;
 		}
 		?>
-		<div class="pggd-status" role="status">
+		<div class="pggd-status">
 			<p class="pggd-status-line">
 				<span class="dashicons dashicons-lock" aria-hidden="true"></span>
 				<strong><?php esc_html_e( 'このページは BASIC 認証で保護されています。', 'pageguard' ); ?></strong>
@@ -304,11 +304,15 @@ class Pggd_Meta_Box {
 						<td>
 							<?php
 							/*
-							 * 保存後に JavaScript が中身を差し替える箱。
-							 * ライブリージョン（role="status"）はこの中の状態文だけに付ける。
-							 * ここ全体に付けると、確認案内や URL まで毎回読み上げられる。
+							 * 読み上げ用のライブリージョン。
+							 * 中身を差し替える箱とは分けて常駐させる。
+							 * ライブリージョン自体を作り直すと読み上げられないため、
+							 * この要素は最後まで置き換えず、JavaScript が
+							 * 状態を表す1文だけをここへ流し込む。
+							 * 見た目は下の #pggd-state が担うので、こちらは読み上げ専用。
 							 */
 							?>
+							<div id="pggd-state-live" class="screen-reader-text" role="status"></div>
 							<div id="pggd-state"><?php self::render_state( $post ); ?></div>
 						</td>
 					</tr>
@@ -868,57 +872,57 @@ class Pggd_Meta_Box {
 	 */
 	private static function get_notice_messages() {
 		return array(
-			'protected'              => array(
+			'protected'                 => array(
 				'type'  => 'success',
 				'class' => 'notice-success',
 				'text'  => __( 'BASIC 認証で保護しました。このページの閲覧にはユーザー名とパスワードが必要になります。', 'pageguard' ),
 			),
-			'password_changed'       => array(
+			'password_changed'          => array(
 				'type'  => 'success',
 				'class' => 'notice-success',
 				'text'  => __( 'パスワードを変更しました。閲覧する方への連絡をお忘れなく。', 'pageguard' ),
 			),
-			'username_changed'       => array(
+			'username_changed'          => array(
 				'type'  => 'success',
 				'class' => 'notice-success',
 				'text'  => __( 'ユーザー名を変更しました。閲覧する方への連絡をお忘れなく。', 'pageguard' ),
 			),
-			'unprotected'            => array(
+			'unprotected'               => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
 				'text'  => __( 'BASIC 認証を解除しました。このページは URL を知っている人なら誰でも閲覧できる状態です。', 'pageguard' ),
 			),
-			'password_whitespace'    => array(
+			'password_whitespace'       => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
 				'text'  => __( 'パスワードが空白（スペース）だけだったため、パスワードは変更していません。変更する場合は、入力欄の中身をすべて削除してから、空白以外の文字を入力してください。', 'pageguard' ),
 			),
-			'ignored_input'          => array(
+			'ignored_input'             => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
 				'text'  => __( '「保護しない」が選ばれていたため、入力したパスワードは保存していません。保護するには「保護する」を選んでから「更新」してください。', 'pageguard' ),
 			),
-			'username_empty'         => array(
+			'username_empty'            => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'ユーザー名が入力されていません。', 'pageguard' ),
 			),
-			'username_colon'         => array(
+			'username_colon'            => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'ユーザー名にコロン（:）は使えません。', 'pageguard' ),
 			),
-			'username_non_ascii'     => array(
+			'username_non_ascii'        => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'ユーザー名に、半角の英数字と記号以外の文字（全角文字や日本語など）が含まれています。', 'pageguard' ),
 			),
-			'username_control_chars' => array(
+			'username_control_chars'    => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'ユーザー名に、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 			),
-			'password_empty'         => array(
+			'password_empty'            => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'パスワードが入力されていません。', 'pageguard' ),
@@ -928,22 +932,22 @@ class Pggd_Meta_Box {
 			 * 「入力されていません」と言われた利用者は「もう空だ」と思うので、
 			 * 何をすれば直るのかが伝わらない。空欄と区別が付く言い方にする。
 			 */
-			'password_whitespace_only' => array(
+			'password_whitespace_only'  => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'パスワードが空白（スペース）だけになっています。入力欄の中身をすべて削除してから、空白以外の文字を入力してください。', 'pageguard' ),
 			),
-			'password_non_ascii'     => array(
+			'password_non_ascii'        => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'パスワードに、半角の英数字と記号以外の文字（全角文字や日本語など）が含まれています。', 'pageguard' ),
 			),
-			'password_control_chars' => array(
+			'password_control_chars'    => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'パスワードに、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 			),
-			'save_failed'            => array(
+			'save_failed'               => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'データベースへの保存に失敗しました。時間をおいて、もう一度お試しください。', 'pageguard' ),
