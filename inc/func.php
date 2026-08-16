@@ -1,0 +1,187 @@
+<?php
+/**
+ * PageGuard 実装本体のエントリポイント。
+ *
+ * 各機能はクラスファイルへ分け、このファイルでは
+ * 「読み込み」「設定値ヘルパー」「支援・依頼リンク」だけを扱う。
+ *
+ * @package pageguard
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/*-------------------------------------------*/
+/* Load Module
+/*-------------------------------------------*/
+require_once( dirname( __FILE__ ) . '/class-credentials.php' );
+require_once( dirname( __FILE__ ) . '/class-lockout.php' );
+require_once( dirname( __FILE__ ) . '/class-auth.php' );
+require_once( dirname( __FILE__ ) . '/class-meta-box.php' );
+
+/*-------------------------------------------*/
+/* 設定値ヘルパー
+/* 設定画面は別 issue のスコープ。ここでは読み取りと既定値だけを持つ。
+/*-------------------------------------------*/
+
+if ( ! function_exists( 'pggd_get_target_post_types' ) ) {
+	/**
+	 * 保護設定 UI（メタボックス）の対象とする投稿タイプを返す。
+	 *
+	 * 既定は固定ページのみ（docs/spec.md 2）。
+	 * 実在しない投稿タイプや非公開の投稿タイプが混ざっていても無視できるよう、
+	 * 公開投稿タイプと突き合わせて絞り込む。
+	 *
+	 * @return array 投稿タイプ名の配列。
+	 */
+	function pggd_get_target_post_types() {
+		$post_types = get_option( 'pggd_post_types', array( 'page' ) );
+		if ( ! is_array( $post_types ) ) {
+			$post_types = array( 'page' );
+		}
+
+		// 公開されていて編集 UI を持つ投稿タイプのみを対象にする。
+		$available = get_post_types(
+			array(
+				'public'  => true,
+				'show_ui' => true,
+			),
+			'names'
+		);
+		unset( $available['attachment'] );
+
+		$post_types = array_values( array_intersect( $post_types, $available ) );
+
+		/**
+		 * 保護設定 UI の対象投稿タイプを差し替えるフィルター。
+		 *
+		 * @param array $post_types 投稿タイプ名の配列。
+		 */
+		return (array) apply_filters( 'pggd_target_post_types', $post_types );
+	}
+}
+
+if ( ! function_exists( 'pggd_get_max_attempts' ) ) {
+	/**
+	 * 総当たり対策でロックするまでの失敗回数を返す。
+	 *
+	 * 既定 5 回。打ち間違い 2〜3 回では止まらず、総当たりには十分に効く値。
+	 *
+	 * @return int 1 以上の失敗回数。
+	 */
+	function pggd_get_max_attempts() {
+		$attempts = (int) get_option( 'pggd_max_attempts', 5 );
+		return $attempts > 0 ? $attempts : 5;
+	}
+}
+
+if ( ! function_exists( 'pggd_get_lockout_seconds' ) ) {
+	/**
+	 * ロック時間（秒）を返す。
+	 *
+	 * 既定 900 秒（15 分）。打ち間違いで締め出された利用者が
+	 * 現実的に待てる長さで、かつ総当たりの試行速度を大きく落とせる値。
+	 *
+	 * @return int 1 以上の秒数。
+	 */
+	function pggd_get_lockout_seconds() {
+		$seconds = (int) get_option( 'pggd_lockout_seconds', 900 );
+		return $seconds > 0 ? $seconds : 900;
+	}
+}
+
+/*-------------------------------------------*/
+/* フックの登録
+/* 上の設定値ヘルパーは function_exists() で囲んだ条件付き定義のため、
+/* 定義文が実行されるまで呼び出せない。init() より前に置くこと。
+/*-------------------------------------------*/
+Pggd_Auth::init();
+Pggd_Meta_Box::init();
+
+/*-------------------------------------------*/
+/* 支援・依頼リンク（プラグイン一覧行）
+/* 【既知の罠】コールバックは4引数で受ける。3引数で書くと、
+/* 他プラグイン（CBX 等）のコールバックが ArgumentCountError で落ちる。
+/*-------------------------------------------*/
+if ( ! function_exists( 'pggd_plugin_row_meta' ) ) {
+	/**
+	 * プラグイン一覧のプラグイン行に支援・依頼リンクを足す。
+	 *
+	 * @param array  $links       行に表示されるリンクの配列。
+	 * @param string $file        プラグインのメインファイル（plugin_basename 形式）。
+	 * @param array  $plugin_data プラグインヘッダの情報（未使用だが4引数で受ける）。
+	 * @param string $status      プラグインの状態（未使用だが4引数で受ける）。
+	 * @return array リンクの配列。
+	 */
+	function pggd_plugin_row_meta( $links, $file, $plugin_data = array(), $status = '' ) {
+		// 自プラグインの行だけに足す。判定には PGGD_PLUGIN_FILE を使う。
+		if ( plugin_basename( PGGD_PLUGIN_FILE ) !== $file ) {
+			return $links;
+		}
+
+		$links[] = '<a href="https://etbs.jp/product/donate/?utm_source=pageguard&utm_medium=plugin" target="_blank" rel="noopener noreferrer">'
+			. esc_html__( '開発を支援', 'pageguard' ) . '</a>';
+		$links[] = '<a href="https://etbs.jp/product-category/wordpress-tools/?utm_source=pageguard&utm_medium=plugin" target="_blank" rel="noopener noreferrer">'
+			. esc_html__( '開発のご依頼', 'pageguard' ) . '</a>';
+
+		return $links;
+	}
+	add_filter( 'plugin_row_meta', 'pggd_plugin_row_meta', 10, 4 );
+}
+
+/*-------------------------------------------*/
+/* 支援・依頼リンク（ダッシュボードウィジェット）
+/*-------------------------------------------*/
+if ( ! function_exists( 'pggd_add_dashboard_widget' ) ) {
+	/**
+	 * ダッシュボードに PageGuard のウィジェットを追加する。
+	 *
+	 * @return void
+	 */
+	function pggd_add_dashboard_widget() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+		wp_add_dashboard_widget(
+			'pggd_dashboard_widget',
+			'PageGuard',
+			'pggd_render_dashboard_widget'
+		);
+	}
+	add_action( 'wp_dashboard_setup', 'pggd_add_dashboard_widget' );
+}
+
+if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
+	/**
+	 * ダッシュボードウィジェットの中身を出力する。
+	 *
+	 * @return void
+	 */
+	function pggd_render_dashboard_widget() {
+		?>
+		<p><?php esc_html_e( 'ページごとに独立したユーザー名 / パスワードで BASIC 認証をかけられます。保護したいページの編集画面で設定してください。', 'pageguard' ); ?></p>
+		<p><?php esc_html_e( '初期設定では固定ページだけが対象です。投稿やカスタム投稿タイプの編集画面には設定欄が出ません。', 'pageguard' ); ?></p>
+
+		<p>
+			<strong><?php esc_html_e( 'ご注意', 'pageguard' ); ?></strong><br>
+			<?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?>
+			<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
+		</p>
+
+		<p>
+			<strong><?php esc_html_e( 'サポート', 'pageguard' ); ?></strong><br>
+			<?php
+			printf(
+				/* translators: 1: 開発のご依頼ページへのリンク開始タグ, 2: リンク終了タグ, 3: 開発を支援ページへのリンク開始タグ, 4: リンク終了タグ */
+				esc_html__( '有償サポートやカスタマイズは %1$sこちらのページ%2$s からお問い合わせください。開発の継続は %3$sご支援%4$s で応援いただけます。', 'pageguard' ),
+				'<a href="' . esc_url( 'https://etbs.jp/product-category/wordpress-tools/?utm_source=pageguard&utm_medium=plugin' ) . '" target="_blank" rel="noopener noreferrer">',
+				'</a>',
+				'<a href="' . esc_url( 'https://etbs.jp/product/donate/?utm_source=pageguard&utm_medium=plugin' ) . '" target="_blank" rel="noopener noreferrer">',
+				'</a>'
+			);
+			?>
+		</p>
+		<?php
+	}
+}

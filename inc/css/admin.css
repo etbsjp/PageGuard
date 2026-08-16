@@ -1,0 +1,103 @@
+/**
+ * PageGuard: 投稿編集画面のメタボックス用スタイル。
+ *
+ * インラインスタイルを増やさないよう、見た目の調整はここへ集約する。
+ */
+
+/* 状態表示 */
+#pggd_meta_box .pggd-status-line {
+	margin: 0 0 8px;
+}
+
+#pggd_meta_box .pggd-state-list {
+	margin: 0 0 8px;
+	list-style: disc;
+	padding-left: 1.5em;
+}
+
+#pggd_meta_box .pggd-state-list li {
+	margin: 0 0 4px;
+}
+
+/*
+ * 状態セル内の余白。項目どうしは 8px、情報のかたまりの間は 16px にして、
+ * どこまでが1つのまとまりかを余白で読み取れるようにする。
+ */
+#pggd_meta_box .pggd-state-note {
+	margin: 16px 0 0;
+}
+
+#pggd_meta_box .pggd-url-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+#pggd_meta_box .pggd-url {
+	word-break: break-all;
+}
+
+/* クリップボードが使えない環境（HTTP 運用）での確認用 URL */
+#pggd_meta_box .pggd-url-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	max-width: 32em;
+}
+
+/* 保護のラジオ */
+#pggd_meta_box .pggd-radio-row {
+	margin: 0 0 8px;
+}
+
+/*
+ * 解除警告。選択肢どうしの余白（8px）と同じだと余白の階層が崩れて
+ * 「どの選択肢に対する警告か」が読み取りにくくなるため、明確に離す。
+ */
+#pggd_meta_box .pggd-unprotect-warning {
+	margin: 16px 0 0;
+}
+
+/*
+ * パスワード欄と表示切替ボタン。
+ * 782px 未満で WordPress は .form-table td 内の入力欄を width:100% にするため、
+ * inline-flex（内容幅）だと解決先がずれる。flex にして入力欄側で伸縮させる。
+ */
+#pggd_meta_box .pggd-password-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	max-width: 30em;
+}
+
+#pggd_meta_box .pggd-password-row #pggd_password {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/*
+ * メディア直リンクの注意書き。
+ * notice-* は状態に応じて出るメッセージに取っておく。常設の但し書きを
+ * 同じ見た目にすると、行動を求めている案内と区別が付かなくなる。
+ */
+#pggd_meta_box .pggd-media-note {
+	margin: 16px 0 0;
+	padding: 8px 12px;
+	border-left: 4px solid #c3c4c7;
+	background: #f6f7f7;
+}
+
+#pggd_meta_box .pggd-media-note p {
+	margin: 0 0 8px;
+}
+
+#pggd_meta_box .pggd-media-note p:last-child {
+	margin-bottom: 0;
+}
+
+/* 保存結果の通知内で、原因を箇条書きにする */
+.pggd-error-list {
+	margin: 0 0 1em 2em;
+	list-style: disc;
+}
