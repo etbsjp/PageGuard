@@ -384,6 +384,10 @@
 			field.className = 'regular-text code pggd-url-input';
 			field.id        = 'pggd-verify-url';
 			field.value     = code.textContent;
+			// 読み取り専用でもフォームコントロールなので、名前が無いと
+			// 「編集テキスト、読み取り専用、http://…」としか読み上げられず、
+			// 何の URL なのか分からない。
+			field.setAttribute( 'aria-label', i18n.verifyUrlLabel || '' );
 			field.addEventListener( 'focus', function() {
 				field.select();
 			} );

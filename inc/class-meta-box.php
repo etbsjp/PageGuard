@@ -975,6 +975,7 @@ class Pggd_Meta_Box {
 					'hideLabel'            => __( '隠す', 'pageguard' ),
 					'copyLabel'            => __( 'URL をコピー', 'pageguard' ),
 					'copiedLabel'          => __( 'コピーしました', 'pageguard' ),
+					'verifyUrlLabel'       => __( '動作確認用のページ URL', 'pageguard' ),
 					'blockedPrefix'        => __( 'BASIC 認証の設定に不足があるため、更新できません。', 'pageguard' ),
 					'blockedHelp'          => __( '投稿下部の「BASIC 認証（PageGuard）」で入力してください。保護しない場合は「保護しない」を選ぶと更新できます。', 'pageguard' ),
 					'blockedAction'        => __( '設定欄へ移動', 'pageguard' ),

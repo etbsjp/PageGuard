@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       PageGuard
  * Description:       ページ単位で BASIC 認証をかけられるプラグイン。ページごとに独立したユーザー名 / パスワードを設定できます。
- * Version:           1.0.0
+ * Version:           0.9.0
  * Requires at least: 6.7
  * Requires PHP:      7.4
  * Author:            DAI
@@ -19,7 +19,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // 直接アクセスされた場合は終了する。
 }
 
-define( 'PGGD_VERSION', '1.0.0' );
+// 漏れ対策（REST・フィード・検索・サイトマップ）と設定画面が未実装のため 0.9 系。
+// それらが揃った時点で 1.0.0 にする。
+define( 'PGGD_VERSION', '0.9.0' );
 // プラグイン一覧行（plugin_row_meta）で自プラグインを判定するために使う。
 define( 'PGGD_PLUGIN_FILE', __FILE__ );
 
