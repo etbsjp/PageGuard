@@ -156,12 +156,21 @@
 			return problems;
 		}
 
-		var user = username ? trimInput( username.value ) : '';
-		var pass = password ? trimInput( password.value ) : '';
+		var passRaw = password ? password.value : '';
+		var user    = username ? trimInput( username.value ) : '';
+		var pass    = trimInput( passRaw );
 
 		var userEmpty = ( '' === user );
+
+		/*
+		 * 空白だけが入力された状態。サーバー側では「変更しない」と同じ扱いになり、
+		 * 既存のパスワードが残ったまま何も起きない。
+		 * 打った本人は変更したつもりなので、保存前に止めて知らせる。
+		 */
+		var passWhitespaceOnly = ( '' !== passRaw && '' === pass );
+
 		// パスワードの必須判定は hasCredential（既存のハッシュが読めるか）で行う。
-		var passEmpty = ( '' === pass && ! hasCredential );
+		var passEmpty = ( '' === pass && ! hasCredential && ! passWhitespaceOnly );
 
 		// 両方空のときは1文にまとめる（同じ形の文を2つ並べない）。
 		if ( userEmpty && passEmpty ) {
@@ -179,7 +188,9 @@
 			problems.push( { field: 'username', text: i18n.usernameNonAscii || '' } );
 		}
 
-		if ( passEmpty ) {
+		if ( passWhitespaceOnly ) {
+			problems.push( { field: 'password', text: i18n.passwordWhitespace || '' } );
+		} else if ( passEmpty ) {
 			problems.push( { field: 'password', text: i18n.passwordEmpty || '' } );
 		} else if ( '' !== pass && /[\x00-\x1F\x7F]/.test( pass ) ) {
 			problems.push( { field: 'password', text: i18n.passwordControlChars || '' } );
@@ -346,7 +357,12 @@
 			if ( ! url ) {
 				return;
 			}
-			navigator.clipboard.writeText( url.textContent ).then( function() {
+			// 非クリップボード分岐では同じ id が <input> に付け替わる。
+			// 将来ボタンと入力欄が共存したときに、textContent が空文字を返して
+			// 無言で空をコピーすることがないよう value を先に見る。
+			var urlText = url.value ? url.value : url.textContent;
+
+			navigator.clipboard.writeText( urlText ).then( function() {
 				trigger.textContent = i18n.copiedLabel || '';
 				// 押しっぱなしの表示にせず、少ししたら元のラベルへ戻す。
 				window.setTimeout( function() {

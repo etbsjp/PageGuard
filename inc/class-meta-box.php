@@ -366,6 +366,14 @@ class Pggd_Meta_Box {
 								<?php esc_html_e( 'ユーザー名とパスワードは、半角の英数字と記号で設定してください。', 'pageguard' ); ?>
 								<?php esc_html_e( '全角文字や日本語は、ブラウザによって正しく送信されず認証できないことがあります。', 'pageguard' ); ?>
 								<?php esc_html_e( 'パスワードは 8 文字以上を目安にしてください。', 'pageguard' ); ?>
+								<?php
+								/*
+								 * 認証側は受け取った値を trim しないため、これを書いておかないと
+								 * 「末尾に空白が付いた文字列を貼り付けて保存し、その文字列を
+								 * そのまま閲覧者へ伝えたのに認証が通らない」という食い違いが残る。
+								 */
+								?>
+								<?php esc_html_e( '前後の空白は自動的に取り除かれます。', 'pageguard' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -619,8 +627,17 @@ class Pggd_Meta_Box {
 		 * 原因を確かめようがない」という最悪の形になる。
 		 * BASIC 認証のパスワードに前後の空白を意図して入れる利用者はまずいない。
 		 */
-		$username = self::trim_input( $username );
-		$password = self::trim_input( $password );
+		$password_raw = $password;
+		$username     = self::trim_input( $username );
+		$password     = self::trim_input( $password );
+
+		/*
+		 * 空白だけが入力された場合、trim の結果は空文字になる。
+		 * 既存の資格情報が読める状態だと、これは「変更しない」と同じ扱いになり、
+		 * 何も通知しないと「パスワードを変えたのに何も言われない、実は変わっていない」
+		 * という沈黙した失敗になる。入力を黙って捨てない方針に合わせて拾っておく。
+		 */
+		$password_was_whitespace = ( '' === $password && '' !== $password_raw );
 
 		$was_protected = Pggd_Credentials::is_protected( $post_id );
 		$current       = Pggd_Credentials::get_primary( $post_id );
@@ -688,6 +705,9 @@ class Pggd_Meta_Box {
 		} else {
 			if ( $password_sent ) {
 				$notices[] = 'password_changed';
+			} elseif ( $password_was_whitespace ) {
+				// 変更するつもりで打ったのに何も起きなかった、を沈黙させない。
+				$notices[] = 'password_whitespace';
 			}
 			if ( $name_changed ) {
 				$notices[] = 'username_changed';
@@ -867,6 +887,11 @@ class Pggd_Meta_Box {
 				'class' => 'notice-warning',
 				'text'  => __( 'BASIC 認証を解除しました。このページは URL を知っている人なら誰でも閲覧できる状態です。', 'pageguard' ),
 			),
+			'password_whitespace'    => array(
+				'type'  => 'warning',
+				'class' => 'notice-warning',
+				'text'  => __( '入力されたパスワードが空白だけだったため、パスワードは変更していません。変更する場合は、空白以外の文字を入力してください。', 'pageguard' ),
+			),
 			'ignored_input'          => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
@@ -985,6 +1010,7 @@ class Pggd_Meta_Box {
 					'usernameNonAscii'     => __( 'ユーザー名に、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
 					'usernameControlChars' => __( 'ユーザー名に、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 					'passwordEmpty'        => __( 'パスワードが入力されていません。', 'pageguard' ),
+					'passwordWhitespace'   => __( 'パスワードに空白以外の文字が入力されていません。変更しない場合は、パスワード欄を空にしてください。', 'pageguard' ),
 					'passwordNonAscii'     => __( 'パスワードに、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
 					'passwordControlChars' => __( 'パスワードに、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 					'stateFailed'          => __( '保存の送信自体は完了しています。ただし保存後の状態を取得できなかったため、この画面の表示は当てになりません。編集画面を再読み込みして確認してください。', 'pageguard' ),
