@@ -42,9 +42,15 @@ class Pggd_Auth {
 	 * 経路ごとに書くと、片方だけ添付ファイルの扱いが抜ける形で穴が空く。
 	 *
 	 * @param WP_Post $post 表示中の投稿。
-	 * @return int 保護の判定に使う投稿ID。
+	 * @return int 保護の判定に使う投稿ID。WP_Post 以外を渡された場合は 0。
 	 */
 	public static function resolve_target_id( $post ) {
+		// public にしたので、呼び出し側の型を信用しない。
+		// 引数に型宣言を付けると、渡し間違いが fatal になって画面ごと落ちる。
+		if ( ! $post instanceof WP_Post ) {
+			return 0;
+		}
+
 		$target_id = (int) $post->ID;
 
 		if ( Pggd_Credentials::is_protected( $target_id ) ) {

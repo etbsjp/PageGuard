@@ -165,20 +165,30 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 		<p><?php esc_html_e( 'ページごとに独立したユーザー名 / パスワードで BASIC 認証をかけられます。保護したいページの編集画面で設定してください。', 'pageguard' ); ?></p>
 		<p><?php esc_html_e( '初期設定では固定ページだけが対象です。投稿やカスタム投稿タイプの編集画面には設定欄が出ません。', 'pageguard' ); ?></p>
 
+		<?php
+		/*
+		 * 見出しは strong + br ではなく見出し要素で出す。
+		 * 段落が増えて構造が要る量になったので、支援技術でも項目単位で辿れるようにする。
+		 * ダッシュボードのウィジェット名が h2 なので、その下は h3 にする。
+		 */
+		?>
+		<h3><?php esc_html_e( 'ご注意', 'pageguard' ); ?></h3>
 		<p>
-			<strong><?php esc_html_e( 'ご注意', 'pageguard' ); ?></strong><br>
 			<?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?>
 			<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
 		</p>
 
+		<h3><?php esc_html_e( 'サイト表側の一覧について', 'pageguard' ); ?></h3>
+		<?php
+		// 理由（キャッシュ経由の配布を避けるため）は README に置き、ここは事実と対処だけにする。
+		?>
 		<p>
-			<?php esc_html_e( '保護中のページは、サイト内検索・一覧・フィード・サイトマップ・REST API から除外されます。', 'pageguard' ); ?>
-			<?php esc_html_e( 'ログイン中の管理者にも表示されません（表示を出し分けるとキャッシュ経由で他の訪問者へ配られる恐れがあるためです）。', 'pageguard' ); ?>
-			<?php esc_html_e( '保護中のページを探すときは、管理画面の投稿一覧をご利用ください。', 'pageguard' ); ?>
+			<?php esc_html_e( '保護中のページは、サイト内検索・一覧・フィード・サイトマップ・REST API から外れます。', 'pageguard' ); ?>
+			<?php esc_html_e( 'ログイン中でもサイト表側には表示されないため、保護中のページを探すときは管理画面の固定ページ一覧をご利用ください。', 'pageguard' ); ?>
 		</p>
 
+		<h3><?php esc_html_e( 'サポート', 'pageguard' ); ?></h3>
 		<p>
-			<strong><?php esc_html_e( 'サポート', 'pageguard' ); ?></strong><br>
 			<?php
 			printf(
 				/* translators: 1: 開発のご依頼ページへのリンク開始タグ, 2: リンク終了タグ, 3: 開発を支援ページへのリンク開始タグ, 4: リンク終了タグ */

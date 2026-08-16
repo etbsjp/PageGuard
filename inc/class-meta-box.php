@@ -426,6 +426,26 @@ class Pggd_Meta_Box {
 				</tbody>
 			</table>
 
+			<?php
+			/*
+			 * 一覧から外れることは、保護をかけた本人がいちばん驚く副作用なので、
+			 * 保護を設定するこの画面に常設で置く。ダッシュボードウィジェットは
+			 * 閉じられる・表示オプションで消せるため、伝達を任せきれない。
+			 */
+			?>
+			<div class="pggd-visibility-note">
+				<p>
+					<strong><?php esc_html_e( '保護中のページは、サイト表側の一覧から外れます。', 'pageguard' ); ?></strong>
+					<?php esc_html_e( 'サイト内の検索結果・アーカイブ一覧・フィード・サイトマップ・REST API に表示されなくなります。', 'pageguard' ); ?>
+					<?php esc_html_e( 'ログイン中でも、サイト表側の一覧には表示されません。', 'pageguard' ); ?>
+				</p>
+				<p><?php esc_html_e( '保護中のページを探すときは、管理画面の固定ページ一覧をご利用ください（管理画面の一覧・検索・編集画面には今までどおり表示されます）。', 'pageguard' ); ?></p>
+				<p>
+					<?php esc_html_e( 'ナビゲーションメニューに登録している場合は、メニュー側からリンクを外してください。', 'pageguard' ); ?>
+					<?php esc_html_e( 'メニューの項目は自動では消えません。', 'pageguard' ); ?>
+				</p>
+			</div>
+
 			<div class="pggd-media-note">
 				<p>
 					<strong><?php esc_html_e( 'メディアファイルへの直リンクは保護できません。', 'pageguard' ); ?></strong>
@@ -915,7 +935,8 @@ class Pggd_Meta_Box {
 			'protected'                 => array(
 				'type'  => 'success',
 				'class' => 'notice-success',
-				'text'  => __( 'BASIC 認証で保護しました。このページの閲覧にはユーザー名とパスワードが必要になります。', 'pageguard' ),
+				// 一覧から外れることは、この保存操作で初めて起きる変化なので通知にも書く。
+				'text'  => __( 'BASIC 認証で保護しました。このページの閲覧にはユーザー名とパスワードが必要になります。あわせて、サイト表側の検索結果や一覧には表示されなくなります（管理画面には今までどおり表示されます）。', 'pageguard' ),
 			),
 			'password_changed'          => array(
 				'type'  => 'success',
@@ -930,7 +951,8 @@ class Pggd_Meta_Box {
 			'unprotected'               => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
-				'text'  => __( 'BASIC 認証を解除しました。このページは URL を知っている人なら誰でも閲覧できる状態です。', 'pageguard' ),
+				// 保護時と対になるよう、一覧へ戻ることも書く（状態遷移が両方向で分かるように）。
+				'text'  => __( 'BASIC 認証を解除しました。このページは URL を知っている人なら誰でも閲覧できる状態です。サイト表側の一覧にも再び表示されるようになります。', 'pageguard' ),
 			),
 			'password_whitespace'       => array(
 				'type'  => 'warning',
