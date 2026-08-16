@@ -49,6 +49,33 @@ class Pggd_Meta_Box {
 	const STATE_NONCE_ACTION = 'pggd_get_state';
 
 	/**
+	 * 前後から落とす空白文字の集合（正規表現の文字クラス用）。
+	 *
+	 * JavaScript の String.prototype.trim() が落とす文字と同じものを並べている。
+	 * PHP の trim() は " \t\n\r\0\x0B" しか落とさず、全角スペース（U+3000）などが残る。
+	 * ここがずれると、JavaScript 側は空白を落として「入力あり」と判定して通すのに
+	 * サーバー側は空白を含んだまま「使えない文字がある」と弾く、という
+	 * 利用者から見て意味の分からない食い違いが起きる。
+	 */
+	const TRIM_CHARS = '\x{0009}-\x{000D}\x{0020}\x{00A0}\x{1680}\x{2000}-\x{200A}\x{2028}\x{2029}\x{202F}\x{205F}\x{3000}\x{FEFF}';
+
+	/**
+	 * 入力値の前後から空白を落とす。
+	 *
+	 * @param string $value 入力値。
+	 * @return string 前後の空白を落とした値。
+	 */
+	private static function trim_input( $value ) {
+		$value   = (string) $value;
+		$pattern = '/^[' . self::TRIM_CHARS . ']+|[' . self::TRIM_CHARS . ']+$/u';
+		$trimmed = preg_replace( $pattern, '', $value );
+
+		// 不正な UTF-8 の場合 preg_replace() は null を返す。
+		// その値はどのみち非 ASCII として弾かれるので、素の trim() に落とす。
+		return ( null === $trimmed ) ? trim( $value ) : $trimmed;
+	}
+
+	/**
 	 * フックを登録する。
 	 *
 	 * @return void
@@ -137,20 +164,31 @@ class Pggd_Meta_Box {
 		$is_protected = Pggd_Credentials::is_protected( $post->ID );
 		$permalink    = get_permalink( $post );
 
+		/*
+		 * 読み上げの対象は状態を表す1文だけに絞る。
+		 * 下の確認案内まで囲むと、保存のたびに4段落と URL が読み上げられる。
+		 * 操作要素（コピーボタン等）もこの外に置くこと。
+		 * ライブリージョンの読み上げはフォーカスを移さないため、
+		 * 中にボタンがあっても、そこへ到達する手段が案内されない。
+		 */
 		if ( ! $is_protected ) {
 			?>
-			<p class="pggd-status-line">
-				<span class="dashicons dashicons-unlock" aria-hidden="true"></span>
-				<strong><?php esc_html_e( 'このページは BASIC 認証で保護されていません。', 'pageguard' ); ?></strong>
-			</p>
+			<div class="pggd-status" role="status">
+				<p class="pggd-status-line">
+					<span class="dashicons dashicons-unlock" aria-hidden="true"></span>
+					<strong><?php esc_html_e( 'このページは BASIC 認証で保護されていません。', 'pageguard' ); ?></strong>
+				</p>
+			</div>
 			<?php
 			return;
 		}
 		?>
-		<p class="pggd-status-line">
-			<span class="dashicons dashicons-lock" aria-hidden="true"></span>
-			<strong><?php esc_html_e( 'このページは BASIC 認証で保護されています。', 'pageguard' ); ?></strong>
-		</p>
+		<div class="pggd-status" role="status">
+			<p class="pggd-status-line">
+				<span class="dashicons dashicons-lock" aria-hidden="true"></span>
+				<strong><?php esc_html_e( 'このページは BASIC 認証で保護されています。', 'pageguard' ); ?></strong>
+			</p>
+		</div>
 
 		<?php if ( null === $credential ) : ?>
 			<div class="notice notice-error inline pggd-state-note">
@@ -194,7 +232,7 @@ class Pggd_Meta_Box {
 			?>
 			<p><?php esc_html_e( '保護を設定したら、次の URL をコピーしてプライベートウィンドウ（シークレットモード）に貼り付けて開き、実際にユーザー名とパスワードで表示できることを必ず確認してください。', 'pageguard' ); ?></p>
 			<?php if ( $permalink ) : ?>
-				<p class="pggd-url-row">
+				<p class="pggd-url-row" id="pggd-url-row">
 					<code class="pggd-url" id="pggd-verify-url"><?php echo esc_html( $permalink ); ?></code>
 				</p>
 			<?php endif; ?>
@@ -222,13 +260,21 @@ class Pggd_Meta_Box {
 			<?php
 			return;
 		}
+
+		if ( $is_protected ) {
+			// 保護中なのに既存のパスワードが読めない＝復旧のための入力を求めている場面。
+			// 新規設定と同じ調子で書くと、いま何を求められているのかがぼやける。
+			?>
+			<?php esc_html_e( 'このページの保護を続けるには、ユーザー名とパスワードの両方を入力し直してください。', 'pageguard' ); ?>
+			<?php esc_html_e( '保存後は画面に表示できなくなるため、控えを取ってから「更新」してください。', 'pageguard' ); ?>
+			<br>
+			<strong><?php esc_html_e( 'パスワードだけを空欄にしても保護は解除されません。解除するには「保護しない」を選んでから「更新」してください。', 'pageguard' ); ?></strong>
+			<?php
+			return;
+		}
 		?>
 		<?php esc_html_e( 'ページを閲覧する人に伝えるパスワードです。', 'pageguard' ); ?>
 		<?php esc_html_e( '保存後は画面に表示できなくなるため、控えを取ってから「更新」してください。', 'pageguard' ); ?>
-		<?php if ( $is_protected ) : ?>
-			<br>
-			<strong><?php esc_html_e( 'パスワードだけを空欄にしても保護は解除されません。解除するには「保護しない」を選んでから「更新」してください。', 'pageguard' ); ?></strong>
-		<?php endif; ?>
 		<?php
 	}
 
@@ -258,11 +304,12 @@ class Pggd_Meta_Box {
 						<td>
 							<?php
 							/*
-							 * 保存後に JavaScript が中身を差し替えるため、
-							 * 変化が読み上げられるようライブリージョンにしておく。
+							 * 保存後に JavaScript が中身を差し替える箱。
+							 * ライブリージョン（role="status"）はこの中の状態文だけに付ける。
+							 * ここ全体に付けると、確認案内や URL まで毎回読み上げられる。
 							 */
 							?>
-							<div id="pggd-state" role="status"><?php self::render_state( $post ); ?></div>
+							<div id="pggd-state"><?php self::render_state( $post ); ?></div>
 						</td>
 					</tr>
 
@@ -301,6 +348,25 @@ class Pggd_Meta_Box {
 									</p>
 								</div>
 							</fieldset>
+						</td>
+					</tr>
+
+					<?php
+					/*
+					 * 文字種の注意はユーザー名とパスワードに共通する。
+					 * どちらか一方の行の中に置くと、もう一方を入力している人の
+					 * 視線には入らない（画面上は2行ぶん離れてしまう）。
+					 * 両方の入力欄より前に、独立した1行として置く。
+					 */
+					?>
+					<tr>
+						<th scope="row"><?php esc_html_e( '入力のきまり', 'pageguard' ); ?></th>
+						<td>
+							<p class="description" id="pggd-charset-note">
+								<?php esc_html_e( 'ユーザー名とパスワードは、半角の英数字と記号で設定してください。', 'pageguard' ); ?>
+								<?php esc_html_e( '全角文字や日本語は、ブラウザによって正しく送信されず認証できないことがあります。', 'pageguard' ); ?>
+								<?php esc_html_e( 'パスワードは 8 文字以上を目安にしてください。', 'pageguard' ); ?>
+							</p>
 						</td>
 					</tr>
 
@@ -343,18 +409,6 @@ class Pggd_Meta_Box {
 								<span id="pggd-password-actions"></span>
 							</span>
 							<p class="description" id="pggd-password-description"><?php self::render_password_description( $is_protected, $has_credential ); ?></p>
-							<?php
-							/*
-							 * 文字種の注意はユーザー名とパスワードに共通するため、
-							 * それぞれの説明文に書かず、ここに1度だけ置いて
-							 * 両方の aria-describedby から参照する。
-							 */
-							?>
-							<p class="description" id="pggd-charset-note">
-								<?php esc_html_e( 'ユーザー名とパスワードは、半角の英数字と記号で設定してください。', 'pageguard' ); ?>
-								<?php esc_html_e( '全角文字や日本語は、ブラウザによって正しく送信されず認証できないことがあります。', 'pageguard' ); ?>
-								<?php esc_html_e( 'パスワードは 8 文字以上を目安にしてください。', 'pageguard' ); ?>
-							</p>
 						</td>
 					</tr>
 				</tbody>
@@ -366,7 +420,6 @@ class Pggd_Meta_Box {
 					<?php esc_html_e( 'このページに貼った画像や PDF などのファイル URL に直接アクセスされた場合、内容は表示されてしまいます。', 'pageguard' ); ?>
 					<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
 				</p>
-				<p><?php esc_html_e( '添付ファイルのページ（ファイル1つを表示する WordPress のページ）も保護されますが、対象はこのページに直接アップロードしたファイルだけです。メディアライブラリから再利用したファイルの添付ファイルページは保護されません。', 'pageguard' ); ?></p>
 				<p><?php esc_html_e( '本当に見せたくないファイルは、このページに貼らずに、別の手段でお渡しください。', 'pageguard' ); ?></p>
 			</div>
 		</div>
@@ -428,6 +481,14 @@ class Pggd_Meta_Box {
 		self::render_password_description( $is_protected, $has_credential );
 		$description_html = ob_get_clean();
 
+		$notices   = self::get_notices_for_js( $post_id );
+		$has_error = false;
+		foreach ( $notices as $notice ) {
+			if ( 'error' === $notice['status'] ) {
+				$has_error = true;
+			}
+		}
+
 		wp_send_json_success(
 			array(
 				'state'               => $state_html,
@@ -437,7 +498,11 @@ class Pggd_Meta_Box {
 				'passwordLabel'       => self::get_password_label( $has_credential ),
 				'passwordDescription' => $description_html,
 				'passwordPlaceholder' => $has_credential ? __( '変更する場合のみ入力', 'pageguard' ) : '',
-				'notices'             => self::get_notices_for_js( $post_id ),
+				'notices'             => $notices,
+				// エラーで拒否された場合、入力欄を保存前の値へ戻さないための目印。
+				// 「もう一度お試しください」と言われた時点で入力が消えていると、
+				// 「もう一度」が入力し直しからになってしまう。
+				'hasError'            => $has_error ? 1 : 0,
 			)
 		);
 	}
@@ -445,8 +510,15 @@ class Pggd_Meta_Box {
 	/**
 	 * 保存結果の通知を、エディタ内通知に使える形へ組み立てる。
 	 *
+	 * id を通知コードから作るのは、同じ種類の通知が積み上がらないようにするため。
+	 * ブロックエディタの通知は自動では消えないので、id が無いと
+	 * パスワードを3回変更しただけで同じ通知が3つ並ぶ。
+	 *
+	 * 成功系は snackbar（数秒で消える）にする。コアの「更新しました」と同じ扱い。
+	 * 警告とエラーは、見落とすと事故になるので上部の固定通知に残す。
+	 *
 	 * @param int $post_id 投稿ID。
-	 * @return array status / text を持つ配列の配列。
+	 * @return array id / status / text / type を持つ配列の配列。
 	 */
 	private static function get_notices_for_js( $post_id ) {
 		$messages = self::get_notice_messages();
@@ -462,18 +534,27 @@ class Pggd_Meta_Box {
 				continue;
 			}
 			$notices[] = array(
+				'id'     => 'pggd-' . $code,
 				'status' => $messages[ $code ]['type'],
 				'text'   => $messages[ $code ]['text'],
+				'type'   => ( 'success' === $messages[ $code ]['type'] ) ? 'snackbar' : 'default',
 			);
 		}
 
 		if ( ! empty( $errors ) ) {
 			// エラーは1件にまとめる（原因ごとに並べると同じ末尾が繰り返される）。
 			$notices[] = array(
+				'id'     => 'pggd-errors',
 				'status' => 'error',
-				'text'   => __( 'BASIC 認証の設定を保存できませんでした。', 'pageguard' )
-					. implode( '', $errors )
-					. __( '保護の状態は変更していません。', 'pageguard' ),
+				'text'   => implode(
+					' ',
+					array_merge(
+						array( __( 'BASIC 認証の設定を保存できませんでした。', 'pageguard' ) ),
+						$errors,
+						array( __( '保護の状態は変更していません。', 'pageguard' ) )
+					)
+				),
+				'type'   => 'default',
 			);
 		}
 
@@ -530,8 +611,16 @@ class Pggd_Meta_Box {
 		$username = isset( $_POST['pggd_username'] ) ? (string) wp_unslash( $_POST['pggd_username'] ) : '';
 		$password = isset( $_POST['pggd_password'] ) ? (string) wp_unslash( $_POST['pggd_password'] ) : '';
 
-		// 前後の空白だけは落とす（見えない差で認証が通らない事故のほうが大きいため）。
-		$username = trim( $username );
+		/*
+		 * 前後の空白は両方とも落とす。
+		 * メールやチャットからコピーすると末尾に半角スペースが紛れ込むことは日常的に起きる。
+		 * 半角スペースは使える文字の範囲内なのでエラーにもならず、そのままハッシュ化され、
+		 * 「伝えたパスワードでは通らないのに、設定済みパスワードは再表示できないので
+		 * 原因を確かめようがない」という最悪の形になる。
+		 * BASIC 認証のパスワードに前後の空白を意図して入れる利用者はまずいない。
+		 */
+		$username = self::trim_input( $username );
+		$password = self::trim_input( $password );
 
 		$was_protected = Pggd_Credentials::is_protected( $post_id );
 		$current       = Pggd_Credentials::get_primary( $post_id );
@@ -801,7 +890,7 @@ class Pggd_Meta_Box {
 			'username_control_chars' => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
-				'text'  => __( 'ユーザー名に、改行などの使えない文字が含まれています。', 'pageguard' ),
+				'text'  => __( 'ユーザー名に、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 			),
 			'password_empty'         => array(
 				'type'  => 'error',
@@ -816,7 +905,7 @@ class Pggd_Meta_Box {
 			'password_control_chars' => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
-				'text'  => __( 'パスワードに、改行などの使えない文字が含まれています。', 'pageguard' ),
+				'text'  => __( 'パスワードに、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 			),
 			'save_failed'            => array(
 				'type'  => 'error',
@@ -886,18 +975,20 @@ class Pggd_Meta_Box {
 					'hideLabel'            => __( '隠す', 'pageguard' ),
 					'copyLabel'            => __( 'URL をコピー', 'pageguard' ),
 					'copiedLabel'          => __( 'コピーしました', 'pageguard' ),
-					'blockedPrefix'        => __( 'BASIC 認証の設定に不足があるため、更新できません:', 'pageguard' ),
+					'blockedPrefix'        => __( 'BASIC 認証の設定に不足があるため、更新できません。', 'pageguard' ),
 					'blockedHelp'          => __( '投稿下部の「BASIC 認証（PageGuard）」で入力してください。保護しない場合は「保護しない」を選ぶと更新できます。', 'pageguard' ),
 					'blockedAction'        => __( '設定欄へ移動', 'pageguard' ),
 					'bothEmpty'            => __( 'ユーザー名とパスワードが入力されていません。', 'pageguard' ),
 					'usernameEmpty'        => __( 'ユーザー名が入力されていません。', 'pageguard' ),
 					'usernameColon'        => __( 'ユーザー名にコロン（:）は使えません。', 'pageguard' ),
 					'usernameNonAscii'     => __( 'ユーザー名に、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
-					'usernameControlChars' => __( 'ユーザー名に、改行などの使えない文字が含まれています。', 'pageguard' ),
+					'usernameControlChars' => __( 'ユーザー名に、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 					'passwordEmpty'        => __( 'パスワードが入力されていません。', 'pageguard' ),
 					'passwordNonAscii'     => __( 'パスワードに、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
-					'passwordControlChars' => __( 'パスワードに、改行などの使えない文字が含まれています。', 'pageguard' ),
-					'stateFailed'          => __( '保存後の状態を取得できませんでした。編集画面を再読み込みして確認してください。', 'pageguard' ),
+					'passwordControlChars' => __( 'パスワードに、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
+					'stateFailed'          => __( '保存の送信自体は完了しています。ただし保存後の状態を取得できなかったため、この画面の表示は当てになりません。編集画面を再読み込みして確認してください。', 'pageguard' ),
+					'stateFailedPrefix'    => __( '保存の送信自体は完了しています。', 'pageguard' ),
+					'reloadHint'           => __( 'この画面の表示は当てにならないため、編集画面を再読み込みして確認してください。', 'pageguard' ),
 					'reloadLabel'          => __( '編集画面を再読み込みする', 'pageguard' ),
 				),
 			)

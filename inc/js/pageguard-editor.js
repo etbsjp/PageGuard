@@ -49,6 +49,21 @@
 	var isProtected    = ( 1 === parseInt( data.isProtected, 10 ) );
 	var hasCredential  = ( 1 === parseInt( data.hasCredential, 10 ) );
 	var lastProblemKey = null;
+	// 保存後の状態を取得できなかった場合に立てる。
+	// 手元の isProtected / hasCredential が当てにならない以上、検証もできない。
+	var stateUnknown   = false;
+
+	/**
+	 * 前後の空白を落とす。
+	 *
+	 * サーバー側 Pggd_Meta_Box::trim_input() と同じ文字集合であること。
+	 * JavaScript の \s は全角スペース（U+3000）を含むが PHP の trim() は含まないため、
+	 * 素朴に書くと「JS は通すのにサーバーが弾く」食い違いが生まれる。
+	 * PHP 側をこちらに合わせてある。
+	 */
+	function trimInput( value ) {
+		return String( value ).replace( /^\s+|\s+$/g, '' );
+	}
 
 	/**
 	 * wp.data のストアを安全に取り出す。クラシックエディタでは null を返す。
@@ -96,10 +111,12 @@
 	 * ------------------------------------------------------------------ */
 
 	/**
-	 * メタボックスを開いて画面内に入れ、最初の未入力欄へフォーカスする。
+	 * メタボックスを開いて画面内に入れ、直すべき欄へフォーカスする。
 	 * 「更新」を止めるからには、直す場所への導線をセットで用意する。
+	 *
+	 * @param {string} field 'username' または 'password'。
 	 */
-	function focusMetaBox() {
+	function focusMetaBox( field ) {
 		// 折りたたまれている場合があるので開く。
 		box.classList.remove( 'closed' );
 		var toggle = box.querySelector( '.handlediv' );
@@ -111,11 +128,11 @@
 			box.scrollIntoView( { block: 'center' } );
 		}
 
-		var target = null;
-		if ( username && '' === username.value.replace( /^\s+|\s+$/g, '' ) ) {
-			target = username;
-		} else if ( password && '' === password.value && ! hasCredential ) {
-			target = password;
+		// 空欄とは限らない（コロン・全角・制御文字は値が入っている）。
+		// 問題のある欄を指定してもらい、決まらなければユーザー名欄へ寄せる。
+		var target = ( 'password' === field ) ? password : username;
+		if ( ! target ) {
+			target = username || password;
 		}
 		if ( target ) {
 			target.focus();
@@ -123,18 +140,24 @@
 	}
 
 	/**
-	 * 現在の入力内容から、保存を止めるべき理由の一覧を返す。
+	 * 現在の入力内容から、保存を止めるべき理由を返す。
 	 * サーバー側 save() の検証と同じ条件にしてある。
+	 *
+	 * @return {Array} { field, text } の配列。
 	 */
 	function collectProblems() {
 		var problems = [];
 
+		if ( stateUnknown ) {
+			// 状態が分からないので、検証の前提が無い。
+			return problems;
+		}
 		if ( ! protectOn || ! protectOn.checked ) {
 			return problems;
 		}
 
-		var user = username ? username.value.replace( /^\s+|\s+$/g, '' ) : '';
-		var pass = password ? password.value : '';
+		var user = username ? trimInput( username.value ) : '';
+		var pass = password ? trimInput( password.value ) : '';
 
 		var userEmpty = ( '' === user );
 		// パスワードの必須判定は hasCredential（既存のハッシュが読めるか）で行う。
@@ -142,26 +165,26 @@
 
 		// 両方空のときは1文にまとめる（同じ形の文を2つ並べない）。
 		if ( userEmpty && passEmpty ) {
-			problems.push( i18n.bothEmpty || '' );
+			problems.push( { field: 'username', text: i18n.bothEmpty || '' } );
 			return problems;
 		}
 
 		if ( userEmpty ) {
-			problems.push( i18n.usernameEmpty || '' );
+			problems.push( { field: 'username', text: i18n.usernameEmpty || '' } );
 		} else if ( /[\x00-\x1F\x7F]/.test( user ) ) {
-			problems.push( i18n.usernameControlChars || '' );
+			problems.push( { field: 'username', text: i18n.usernameControlChars || '' } );
 		} else if ( -1 !== user.indexOf( ':' ) ) {
-			problems.push( i18n.usernameColon || '' );
+			problems.push( { field: 'username', text: i18n.usernameColon || '' } );
 		} else if ( /[^\x20-\x7E]/.test( user ) ) {
-			problems.push( i18n.usernameNonAscii || '' );
+			problems.push( { field: 'username', text: i18n.usernameNonAscii || '' } );
 		}
 
 		if ( passEmpty ) {
-			problems.push( i18n.passwordEmpty || '' );
+			problems.push( { field: 'password', text: i18n.passwordEmpty || '' } );
 		} else if ( '' !== pass && /[\x00-\x1F\x7F]/.test( pass ) ) {
-			problems.push( i18n.passwordControlChars || '' );
+			problems.push( { field: 'password', text: i18n.passwordControlChars || '' } );
 		} else if ( '' !== pass && /[^\x20-\x7E]/.test( pass ) ) {
-			problems.push( i18n.passwordNonAscii || '' );
+			problems.push( { field: 'password', text: i18n.passwordNonAscii || '' } );
 		}
 
 		return problems;
@@ -178,7 +201,12 @@
 		}
 
 		var dispatchNotices = getStore( 'core/notices', 'dispatch' );
-		var key             = problems.join( '' );
+		var texts           = [];
+		var index;
+		for ( index = 0; index < problems.length; index++ ) {
+			texts.push( problems[ index ].text );
+		}
+		var key = texts.join( '' );
 
 		// 内容が変わっていないなら再通知しない（打鍵のたびに再描画させない）。
 		if ( key === lastProblemKey ) {
@@ -187,17 +215,21 @@
 		lastProblemKey = key;
 
 		if ( problems.length ) {
+			var firstField = problems[ 0 ].field;
+
 			dispatchEditor.lockPostSaving( LOCK_KEY );
 			if ( dispatchNotices && 'function' === typeof dispatchNotices.createErrorNotice ) {
 				dispatchNotices.createErrorNotice(
-					( i18n.blockedPrefix || '' ) + problems.join( '' ) + ( i18n.blockedHelp || '' ),
+					[ i18n.blockedPrefix || '' ].concat( texts ).concat( [ i18n.blockedHelp || '' ] ).join( ' ' ),
 					{
 						id: NOTICE_ID,
 						isDismissible: false,
 						actions: [
 							{
 								label: i18n.blockedAction || '',
-								onClick: focusMetaBox
+								onClick: function() {
+									focusMetaBox( firstField );
+								}
 							}
 						]
 					}
@@ -206,9 +238,18 @@
 			return;
 		}
 
-		if ( 'function' === typeof dispatchEditor.unlockPostSaving ) {
+		unlockSaving();
+	}
+
+	/**
+	 * 保存の抑止と、そのための通知を解除する。
+	 */
+	function unlockSaving() {
+		var dispatchEditor = getStore( 'core/editor', 'dispatch' );
+		if ( dispatchEditor && 'function' === typeof dispatchEditor.unlockPostSaving ) {
 			dispatchEditor.unlockPostSaving( LOCK_KEY );
 		}
+		var dispatchNotices = getStore( 'core/notices', 'dispatch' );
 		if ( dispatchNotices && 'function' === typeof dispatchNotices.removeNotice ) {
 			dispatchNotices.removeNotice( NOTICE_ID );
 		}
@@ -301,12 +342,16 @@
 			if ( ! trigger ) {
 				return;
 			}
-			var url = document.getElementById( 'pggd-verify-url' );
+			var url = stateBox.querySelector( '#pggd-verify-url' );
 			if ( ! url ) {
 				return;
 			}
 			navigator.clipboard.writeText( url.textContent ).then( function() {
 				trigger.textContent = i18n.copiedLabel || '';
+				// 押しっぱなしの表示にせず、少ししたら元のラベルへ戻す。
+				window.setTimeout( function() {
+					trigger.textContent = i18n.copyLabel || '';
+				}, 2000 );
 			} ).catch( function() {
 				// コピーできなくても URL は画面に出ているので手で選択できる。
 			} );
@@ -314,16 +359,38 @@
 	}
 
 	/**
-	 * 状態表示の中にコピーボタンを差し込む（クリップボードが使えるときだけ）。
+	 * 確認用 URL の行を、環境に応じて使いやすい形にする。
+	 *
+	 * navigator.clipboard は HTTPS か localhost にしか存在しない。
+	 * HTTP 運用のサイトではコピーボタンを出せないので、
+	 * 代わりに読み取り専用の入力欄にして「クリックで全選択」できるようにする
+	 * （word-break した <code> は手で選択しづらい）。
 	 */
 	function injectCopyButton() {
-		if ( ! navigator.clipboard ) {
-			return;
-		}
 		var row = stateBox ? stateBox.querySelector( '.pggd-url-row' ) : null;
-		if ( ! row || row.querySelector( '.pggd-copy-url' ) ) {
+		if ( ! row || row.querySelector( '.pggd-copy-url' ) || row.querySelector( '.pggd-url-input' ) ) {
 			return;
 		}
+
+		var code = row.querySelector( '#pggd-verify-url' );
+		if ( ! code ) {
+			return;
+		}
+
+		if ( ! navigator.clipboard ) {
+			var field = document.createElement( 'input' );
+			field.type      = 'text';
+			field.readOnly  = true;
+			field.className = 'regular-text code pggd-url-input';
+			field.id        = 'pggd-verify-url';
+			field.value     = code.textContent;
+			field.addEventListener( 'focus', function() {
+				field.select();
+			} );
+			row.replaceChild( field, code );
+			return;
+		}
+
 		var button = document.createElement( 'button' );
 		button.type        = 'button';
 		button.className   = 'button button-small pggd-copy-url';
@@ -345,6 +412,23 @@
 	 * 知らない状態を断定表示させない（古い表示を残すと嘘をつき続ける）。
 	 */
 	function showStateFailure( message ) {
+		/*
+		 * 状態が分からなくなった以上、手元の isProtected / hasCredential も
+		 * 当てにならない。この前提で検証を続けると
+		 * 「パスワードが入力されていません」のような嘘の理由で更新を止めてしまう。
+		 * 検証そのものを降ろし、抑止も通知も解除して、
+		 * 画面に出す指示を「再読み込み」1本に絞る。
+		 */
+		stateUnknown   = true;
+		lastProblemKey = null;
+		unlockSaving();
+
+		// 入力したままの平文パスワードを画面に残さない。
+		if ( password ) {
+			password.value = '';
+			password.setAttribute( 'type', 'password' );
+		}
+
 		if ( ! stateBox ) {
 			return;
 		}
@@ -352,9 +436,13 @@
 		var wrapper = document.createElement( 'div' );
 		wrapper.className = 'notice notice-warning inline pggd-state-note';
 
+		// 読み上げの対象は文章だけ。操作要素はこの外に置く。
+		var live = document.createElement( 'div' );
+		live.setAttribute( 'role', 'status' );
 		var text = document.createElement( 'p' );
 		text.textContent = message || i18n.stateFailed || '';
-		wrapper.appendChild( text );
+		live.appendChild( text );
+		wrapper.appendChild( live );
 
 		var actions = document.createElement( 'p' );
 		var reload  = document.createElement( 'button' );
@@ -373,6 +461,10 @@
 
 	/**
 	 * 保存結果の通知をエディタ内に出す。
+	 *
+	 * id を付けるのは、同じ通知が積み上がらないようにするため
+	 * （ブロックエディタの固定通知は自動では消えない）。
+	 * 成功系は snackbar にして数秒で消す。コアの「更新しました」と同じ扱い。
 	 */
 	function showSavedNotices( notices ) {
 		if ( ! notices || ! notices.length ) {
@@ -387,7 +479,11 @@
 			dispatchNotices.createNotice(
 				notices[ index ].status,
 				notices[ index ].text,
-				{ isDismissible: true }
+				{
+					id: notices[ index ].id,
+					type: notices[ index ].type,
+					isDismissible: true
+				}
 			);
 		}
 	}
@@ -412,13 +508,22 @@
 		} ).then( function( result ) {
 			if ( ! result || ! result.success || ! result.data ) {
 				// nonce 切れや権限不足。古い表示を残さず、理由と復旧手段を出す。
-				var message = ( result && result.data && result.data.message ) ? result.data.message : i18n.stateFailed;
+				var reason  = ( result && result.data && result.data.message ) ? result.data.message : '';
+				var message = reason
+					? ( ( i18n.stateFailedPrefix || '' ) + reason + ( i18n.reloadHint || '' ) )
+					: i18n.stateFailed;
 				showStateFailure( message );
 				return;
 			}
 
+			stateUnknown  = false;
 			isProtected   = ( 1 === parseInt( result.data.isProtected, 10 ) );
 			hasCredential = ( 1 === parseInt( result.data.hasCredential, 10 ) );
+
+			// 保存がエラーで拒否された場合は、入力していた値を書き戻さない。
+			// 「もう一度お試しください」と言われた時点で欄が空だと、
+			// 「もう一度」が入力し直しから始まってしまう。
+			var hasError = ( 1 === parseInt( result.data.hasError, 10 ) );
 
 			if ( stateBox ) {
 				stateBox.innerHTML = result.data.state;
@@ -430,16 +535,17 @@
 			if ( passDesc ) {
 				passDesc.innerHTML = result.data.passwordDescription;
 			}
-			if ( password ) {
+			if ( password && ! hasError ) {
 				// 入力したパスワードを欄に残さない。
 				password.value = '';
+				password.setAttribute( 'type', 'password' );
 				if ( result.data.passwordPlaceholder ) {
 					password.setAttribute( 'placeholder', result.data.passwordPlaceholder );
 				} else {
 					password.removeAttribute( 'placeholder' );
 				}
 			}
-			if ( username ) {
+			if ( username && ! hasError ) {
 				/*
 				 * 解除された場合はユーザー名も消す。残しておくと、
 				 * 次に何も触らず更新しただけで「入力を保存しませんでした」と
