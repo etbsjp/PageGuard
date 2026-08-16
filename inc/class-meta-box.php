@@ -533,9 +533,10 @@ class Pggd_Meta_Box {
 	 * @return array id / status / text / type を持つ配列の配列。
 	 */
 	private static function get_notices_for_js( $post_id ) {
-		$messages = self::get_notice_messages();
-		$notices  = array();
-		$errors   = array();
+		$messages      = self::get_notice_messages();
+		$notices       = array();
+		$errors        = array();
+		$state_changed = false;
 
 		foreach ( self::consume_notices( $post_id ) as $code ) {
 			if ( ! isset( $messages[ $code ] ) ) {
@@ -543,6 +544,9 @@ class Pggd_Meta_Box {
 			}
 			if ( 'error' === $messages[ $code ]['type'] ) {
 				$errors[] = $messages[ $code ]['text'];
+				if ( ! empty( $messages[ $code ]['state_changed'] ) ) {
+					$state_changed = true;
+				}
 				continue;
 			}
 			$notices[] = array(
@@ -563,7 +567,7 @@ class Pggd_Meta_Box {
 					array_merge(
 						array( __( 'BASIC 認証の設定を保存できませんでした。', 'pageguard' ) ),
 						$errors,
-						array( __( '保護の状態は変更していません。', 'pageguard' ) )
+						array( self::get_error_closing( $state_changed ) )
 					)
 				),
 				'type'   => 'default',
@@ -699,8 +703,15 @@ class Pggd_Meta_Box {
 		$name_changed  = ( null !== $current ) && ! hash_equals( $current['username'], $username );
 		$password_sent = ( '' !== $password );
 
-		if ( ! Pggd_Credentials::save_primary( $post_id, $username, $password ) ) {
-			self::add_notice( $post_id, 'save_failed' );
+		$result = Pggd_Credentials::save_primary( $post_id, $username, $password );
+
+		if ( Pggd_Credentials::SAVE_OK !== $result ) {
+			// メタを2つ書く都合上、片方だけ書けて状態が変わってしまうことがある。
+			// そのときに「保護の状態は変更していません」と言ってはいけない。
+			self::add_notice(
+				$post_id,
+				( Pggd_Credentials::SAVE_PARTIAL === $result ) ? 'save_failed_partial' : 'save_failed'
+			);
 			return;
 		}
 
@@ -827,9 +838,10 @@ class Pggd_Meta_Box {
 			return;
 		}
 
-		$messages = self::get_notice_messages();
-		$errors   = array();
-		$others   = array();
+		$messages      = self::get_notice_messages();
+		$errors        = array();
+		$others        = array();
+		$state_changed = false;
 
 		foreach ( $codes as $code ) {
 			if ( ! isset( $messages[ $code ] ) ) {
@@ -837,6 +849,9 @@ class Pggd_Meta_Box {
 			}
 			if ( 'error' === $messages[ $code ]['type'] ) {
 				$errors[] = $messages[ $code ]['text'];
+				if ( ! empty( $messages[ $code ]['state_changed'] ) ) {
+					$state_changed = true;
+				}
 			} else {
 				$others[] = $messages[ $code ];
 			}
@@ -850,7 +865,7 @@ class Pggd_Meta_Box {
 				echo '<li>' . esc_html( $error ) . '</li>';
 			}
 			echo '</ul>';
-			echo '<p>' . esc_html__( '保護の状態は変更していません。', 'pageguard' ) . '</p>';
+			echo '<p>' . esc_html( self::get_error_closing( $state_changed ) ) . '</p>';
 			echo '</div>';
 		}
 
@@ -861,6 +876,22 @@ class Pggd_Meta_Box {
 				esc_html( $message['text'] )
 			);
 		}
+	}
+
+	/**
+	 * エラー通知の締めの一文を返す。
+	 *
+	 * 通常は「保護の状態は変更していません」で閉じてよいが、
+	 * メタの片方だけが書けた場合はそれが嘘になる。実態に合わせて切り替える。
+	 *
+	 * @param bool $state_changed 保護の状態が変わってしまったかどうか。
+	 * @return string 締めの一文。
+	 */
+	private static function get_error_closing( $state_changed ) {
+		if ( $state_changed ) {
+			return __( '保護の状態が中途半端に変わっている可能性があります。編集画面を開き直して、現在の状態をご確認ください。', 'pageguard' );
+		}
+		return __( '保護の状態は変更していません。', 'pageguard' );
 	}
 
 	/**
@@ -950,7 +981,18 @@ class Pggd_Meta_Box {
 			'save_failed'               => array(
 				'type'  => 'error',
 				'class' => 'notice-error',
-				'text'  => __( 'データベースへの保存に失敗しました。時間をおいて、もう一度お試しください。', 'pageguard' ),
+				'text'  => __( 'データベースへの保存に失敗しました。時間をおいて、もう一度お試しください。繰り返し失敗する場合は、サイトの管理会社にご相談ください。', 'pageguard' ),
+			),
+			/*
+			 * 資格情報と索引のどちらか片方だけが書けた場合。
+			 * 締めの一文（保護の状態は変更していません）を差し替えるため、
+			 * state_changed で目印を付ける。
+			 */
+			'save_failed_partial'       => array(
+				'type'          => 'error',
+				'class'         => 'notice-error',
+				'text'          => __( 'データベースへの保存に失敗しました。繰り返し失敗する場合は、サイトの管理会社にご相談ください。', 'pageguard' ),
+				'state_changed' => true,
 			),
 		);
 	}

@@ -62,8 +62,16 @@ class Pggd_Lockout {
 	 *
 	 * 超えた場合はロックしていないものから捨てる。
 	 * 未認証のリクエストだけで options の行を増やされないための蓋。
+	 *
+	 * 回数をページごとに持つようになってレコードが太ったため、
+	 * 500 件だと約 200KB になる。この行は認証失敗のたびに
+	 * オブジェクトキャッシュを迂回して読み書きし、競合時はやり直すので、
+	 * 大きすぎると失敗時の処理そのものが重くなる。
+	 * 200 件（約 80KB）まで下げても、これは「同時に失敗を数えている
+	 * アクセス元の数」なので通常の運用ではまず埋まらない。
+	 * 溢れた場合もロック中のレコードから優先して残す。
 	 */
-	const MAX_ENTRIES = 500;
+	const MAX_ENTRIES = 200;
 
 	/**
 	 * 1つのアクセス元について、同時に回数を数えるページ数の上限。
@@ -150,6 +158,26 @@ class Pggd_Lockout {
 
 		$packed = inet_pton( $ip );
 		if ( false === $packed || 16 !== strlen( $packed ) ) {
+			return $ip;
+		}
+
+		/*
+		 * IPv4-mapped（::ffff:1.2.3.4）は FILTER_FLAG_IPV6 を通過するが、中身は IPv4。
+		 * 上位 64 ビットが全ゼロなので、そのまま /64 に丸めるとどのアドレスも ::/64 に潰れ、
+		 * 「すべての IPv4 訪問者が同じバケットを共有する」状態になる。
+		 * そうなると、誰か1人が5回打ち間違えるだけで全訪問者が15分間 429 になり、
+		 * 15分ごとに5リクエスト送るだけで無期限に維持できてしまう。
+		 * REMOTE_ADDR がこの形式で渡るサーバー構成（nginx の ipv6only=off など）は
+		 * 珍しくないので、IPv4 として扱い直す。
+		 */
+		if ( 0 === strncmp( $packed, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff", 12 ) ) {
+			$mapped = inet_ntop( substr( $packed, 12 ) );
+			return ( false === $mapped ) ? $ip : $mapped;
+		}
+
+		// 上位 64 ビットが全ゼロのアドレス（::1 など）は /64 に丸める意味が無い。
+		// 丸めると同じく ::/64 へ潰れて他と混ざる。
+		if ( "\x00\x00\x00\x00\x00\x00\x00\x00" === substr( $packed, 0, 8 ) ) {
 			return $ip;
 		}
 
@@ -277,7 +305,7 @@ class Pggd_Lockout {
 	 * @param string $ip     アクセス元（新規作成時に使う）。
 	 * @return array 整えたレコード。
 	 */
-	private static function normalize_record( $record, $ip ) {
+	private static function normalize_record( $record, $ip = '' ) {
 		if ( ! is_array( $record ) ) {
 			$record = array();
 		}
@@ -290,6 +318,32 @@ class Pggd_Lockout {
 			'locked'   => isset( $record['locked'] ) ? (int) $record['locked'] : 0,
 			'expires'  => isset( $record['expires'] ) ? (int) $record['expires'] : 0,
 		);
+	}
+
+	/**
+	 * 「探られている」とみなせるページ数を返す。
+	 *
+	 * 1回だけ失敗したページは数えない。
+	 * ブラウザは同じ realm・同じオリジンに対して、覚えている BASIC 資格情報を
+	 * 先読みで送る。そのため、あるページの資格情報を正規に持っている閲覧者が
+	 * 他の保護ページのリンクを辿って回るだけで、各ページに1回ずつ失敗が付く。
+	 * 単純にページ数で数えると、この閲覧者が 21 ページ目で
+	 * 「自分が正規に開けるページも含めて」ロックされてしまう。
+	 *
+	 * 総当たりで探っている相手は、どのページでも必ず2回以上失敗するので、
+	 * 2回以上に絞っても回避路にはならない。
+	 *
+	 * @param array $failures 投稿ID => 失敗回数 の配列。
+	 * @return int 2回以上失敗しているページ数。
+	 */
+	private static function count_probed_posts( $failures ) {
+		$probed = 0;
+		foreach ( $failures as $count ) {
+			if ( (int) $count >= 2 ) {
+				$probed++;
+			}
+		}
+		return $probed;
 	}
 
 	/**
@@ -364,10 +418,19 @@ class Pggd_Lockout {
 	 * 古いキャッシュや期限切れのレコードを掴む可能性がある。
 	 * 後続の設定画面（ロック中 IP の一覧・解除）もここを入り口にする。
 	 *
+	 * 項目の欠けたレコードや古い形式のレコードを、呼び出し側へ素で渡さない。
+	 * 渡すと向こうで同じガードを書き直すことになる。
+	 *
 	 * @return array レコード配列（キーは送信元のハッシュ）。
 	 */
 	public static function get_all_records() {
-		return self::prune( self::decode( self::read_raw() ) );
+		$records = self::prune( self::decode( self::read_raw() ) );
+
+		foreach ( $records as $key => $record ) {
+			$records[ $key ] = self::normalize_record( $record );
+		}
+
+		return $records;
 	}
 
 	/**
@@ -465,7 +528,7 @@ class Pggd_Lockout {
 			$locked = 0;
 			if ( $count >= $max ) {
 				$locked = $now + $seconds;
-			} elseif ( count( $failures ) > self::MAX_POSTS_PER_SOURCE ) {
+			} elseif ( self::count_probed_posts( $failures ) > self::MAX_POSTS_PER_SOURCE ) {
 				// 短時間に多数のページを失敗して回るのは正規の利用ではない。
 				// 古い回数を捨てて回避路を作るより、ここでロックするほうが安全。
 				$locked = $now + $seconds;

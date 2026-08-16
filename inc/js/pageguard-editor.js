@@ -55,6 +55,8 @@
 	var stateUnknown   = false;
 	// 前回の保存で出した通知の id。次の保存で不要になったものを消すために持つ。
 	var shownNoticeIds = [];
+	// 直近でライブリージョンへ流し込んだ文。同じ内容を鳴らし直さないために持つ。
+	var lastAnnounced  = null;
 
 	/**
 	 * 前後の空白を落とす。
@@ -444,7 +446,24 @@
 		if ( ! stateLive ) {
 			return;
 		}
-		stateLive.textContent = text || '';
+
+		text = text || '';
+
+		/*
+		 * 内容が変わっていないなら触らない。
+		 * textContent への代入は、同じ文字列でもテキストノードを作り直すため
+		 * 必ず DOM の変更として検出され、読み上げられてしまう。
+		 * refreshState() は PageGuard に触っていない普通の更新でも毎回走るので、
+		 * これを入れないと保存のたびに同じ状態文を聞かされることになる。
+		 * ライブリージョンは「変化を伝える」ものであって、
+		 * 変化していないのに鳴らすのは誤用。
+		 */
+		if ( text === lastAnnounced ) {
+			return;
+		}
+
+		lastAnnounced         = text;
+		stateLive.textContent = text;
 	}
 
 	/**
@@ -452,7 +471,7 @@
 	 */
 	function readStatusLine() {
 		var line = stateBox ? stateBox.querySelector( '.pggd-status-line' ) : null;
-		return line ? line.textContent.replace( /\s+/g, ' ' ).replace( /^ | $/g, '' ) : '';
+		return line ? trimInput( line.textContent.replace( /\s+/g, ' ' ) ) : '';
 	}
 
 	function showStateFailure( message ) {
