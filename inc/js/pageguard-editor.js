@@ -613,6 +613,38 @@
 		syncUi();
 	}
 
+	/*
+	 * 「入力のきまり」に「前後の空白は自動的に取り除かれます」と書いた以上、
+	 * 画面上でもそう振る舞わせる。欄から離れた時点で前後の空白を落とし、
+	 * 保存されるものと画面に見えているものを一致させる。
+	 *
+	 * ただしパスワードは、空白だけのときに限って落とさない。
+	 * 落とすと空欄＝「変更しない」になり、変更したつもりの入力が
+	 * 何も言われないまま消える（沈黙した失敗）。
+	 * ユーザー名には「空欄＝変更しない」という意味が無いので、
+	 * 空白だけでも落としてよい（落としたほうが「入力されていません」が正確になる）。
+	 */
+	function trimOnBlur( field, keepWhitespaceOnly ) {
+		if ( ! field ) {
+			return;
+		}
+		field.addEventListener( 'blur', function() {
+			var trimmed = trimInput( field.value );
+			if ( trimmed === field.value ) {
+				return;
+			}
+			if ( keepWhitespaceOnly && '' === trimmed ) {
+				return;
+			}
+			field.value = trimmed;
+			// 値を代入しても input / change は発火しないので、自分で走らせる。
+			onInputChanged();
+		} );
+	}
+
+	trimOnBlur( username, false );
+	trimOnBlur( password, true );
+
 	var inputs = box.querySelectorAll( 'input' );
 	var index;
 	for ( index = 0; index < inputs.length; index++ ) {

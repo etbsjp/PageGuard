@@ -676,7 +676,8 @@ class Pggd_Meta_Box {
 
 		if ( '' === $password && null === $current ) {
 			// 既存のハッシュが読めない場合は、空欄の据え置きができない。
-			$errors[] = 'password_empty';
+			// 空白だけを打った場合は、本人には空欄に見えているので言い方を変える。
+			$errors[] = $password_was_whitespace ? 'password_whitespace_only' : 'password_empty';
 		} elseif ( '' !== $password && preg_match( '/[\x00-\x1F\x7F]/', $password ) ) {
 			// 制御文字を黙って除去すると、利用者が意図したものと違う
 			// パスワードがハッシュ化される。非 ASCII と同じくエラーで弾く。
@@ -890,7 +891,7 @@ class Pggd_Meta_Box {
 			'password_whitespace'    => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
-				'text'  => __( '入力されたパスワードが空白だけだったため、パスワードは変更していません。変更する場合は、空白以外の文字を入力してください。', 'pageguard' ),
+				'text'  => __( 'パスワードが空白（スペース）だけだったため、パスワードは変更していません。変更する場合は、入力欄の中身をすべて削除してから、空白以外の文字を入力してください。', 'pageguard' ),
 			),
 			'ignored_input'          => array(
 				'type'  => 'warning',
@@ -921,6 +922,16 @@ class Pggd_Meta_Box {
 				'type'  => 'error',
 				'class' => 'notice-error',
 				'text'  => __( 'パスワードが入力されていません。', 'pageguard' ),
+			),
+			/*
+			 * 空白だけの入力は、画面上では空欄とまったく同じに見える。
+			 * 「入力されていません」と言われた利用者は「もう空だ」と思うので、
+			 * 何をすれば直るのかが伝わらない。空欄と区別が付く言い方にする。
+			 */
+			'password_whitespace_only' => array(
+				'type'  => 'error',
+				'class' => 'notice-error',
+				'text'  => __( 'パスワードが空白（スペース）だけになっています。入力欄の中身をすべて削除してから、空白以外の文字を入力してください。', 'pageguard' ),
 			),
 			'password_non_ascii'     => array(
 				'type'  => 'error',
@@ -1010,7 +1021,7 @@ class Pggd_Meta_Box {
 					'usernameNonAscii'     => __( 'ユーザー名に、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
 					'usernameControlChars' => __( 'ユーザー名に、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 					'passwordEmpty'        => __( 'パスワードが入力されていません。', 'pageguard' ),
-					'passwordWhitespace'   => __( 'パスワードに空白以外の文字が入力されていません。変更しない場合は、パスワード欄を空にしてください。', 'pageguard' ),
+					'passwordWhitespace'   => __( 'パスワードが空白（スペース）だけになっています。入力欄の中身をすべて削除してから、空白以外の文字を入力してください。', 'pageguard' ),
 					'passwordNonAscii'     => __( 'パスワードに、半角の英数字と記号以外の文字が含まれています。', 'pageguard' ),
 					'passwordControlChars' => __( 'パスワードに、改行やタブなどの目に見えない文字が含まれています。他の場所からコピーした場合は、入力欄で選び直して手で入力してください。', 'pageguard' ),
 					'stateFailed'          => __( '保存の送信自体は完了しています。ただし保存後の状態を取得できなかったため、この画面の表示は当てになりません。編集画面を再読み込みして確認してください。', 'pageguard' ),
