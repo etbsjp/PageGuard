@@ -173,8 +173,16 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 		 */
 		?>
 		<h3><?php esc_html_e( 'ご注意', 'pageguard' ); ?></h3>
+		<?php
+		/*
+		 * 1文目は strong で強調する。ダッシュボードでは
+		 * コアの #dashboard-widgets h3 が font-weight: 400 を当てるため見出しが太字にならず、
+		 * さらにこのプラグインの CSS は post.php / post-new.php でしか読み込まれない。
+		 * 強調を CSS の追加読み込みではなくマークアップで担保する（メタボックス側とも表記が揃う）。
+		 */
+		?>
 		<p>
-			<?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?>
+			<strong><?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?></strong>
 			<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
 		</p>
 
@@ -183,7 +191,7 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 		// 理由（キャッシュ経由の配布を避けるため）は README に置き、ここは事実と対処だけにする。
 		?>
 		<p>
-			<?php esc_html_e( '保護中のページは、サイト内検索・一覧・フィード・サイトマップ・REST API から外れます。', 'pageguard' ); ?>
+			<?php esc_html_e( '保護中のページは、サイト内の検索結果・アーカイブ一覧・フィード・サイトマップ・REST API から外れます。', 'pageguard' ); ?>
 			<?php esc_html_e( 'ログイン中でもサイト表側には表示されないため、保護中のページを探すときは管理画面の固定ページ一覧をご利用ください。', 'pageguard' ); ?>
 		</p>
 
