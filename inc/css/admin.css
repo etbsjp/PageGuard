@@ -1,0 +1,56 @@
+/**
+ * PageGuard: 投稿編集画面のメタボックス用スタイル。
+ *
+ * インラインスタイルを増やさないよう、見た目の調整はここへ集約する。
+ */
+
+/* 状態表示 */
+#pggd_meta_box .pggd-status-line {
+	margin: 0 0 8px;
+}
+
+#pggd_meta_box .pggd-state-list {
+	margin: 0 0 8px;
+	list-style: disc;
+	padding-left: 1.5em;
+}
+
+#pggd_meta_box .pggd-state-list li {
+	margin: 0 0 4px;
+}
+
+#pggd_meta_box .pggd-state-note {
+	margin: 8px 0 0;
+}
+
+/* 保護のラジオ */
+#pggd_meta_box .pggd-radio-row {
+	margin: 0 0 8px;
+}
+
+/*
+ * 解除警告。選択肢どうしの余白（8px）と同じだと余白の階層が崩れて
+ * 「どの選択肢に対する警告か」が読み取りにくくなるため、明確に離す。
+ */
+#pggd_meta_box .pggd-unprotect-warning {
+	margin: 16px 0 0;
+}
+
+/* パスワード欄と表示切替ボタン */
+#pggd_meta_box .pggd-password-row {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+/* メディア直リンクの注意書き */
+#pggd_meta_box .pggd-media-note {
+	margin: 16px 0 0;
+}
+
+/* 保存結果の通知内で、原因を箇条書きにする */
+.pggd-error-list {
+	margin: 0 0 1em 2em;
+	list-style: disc;
+}

@@ -99,15 +99,19 @@ class Pggd_Credentials {
 	/**
 	 * 投稿が BASIC 認証で保護されているかを返す。
 	 *
-	 * 索引キー（_pggd_protected）ではなく資格情報の実体を根拠にする。
-	 * 索引キーだけが失われたときに保護が外れる（fail-open）事故を避けるため。
+	 * 資格情報の実体と索引キーのどちらか一方でも「保護中」を示していれば保護中と扱う。
+	 * 片方だけが失われたときに、どちらの向きでも保護が外れない（fail-closed）ようにするため。
+	 * 索引だけが残った場合は資格情報が無いので誰も認証を通せないが、
+	 * その投稿の編集権限を持つユーザーは素通りできるので設定し直して復旧できる。
 	 *
 	 * @param int $post_id 投稿ID。
 	 * @return bool 保護中なら true。
 	 */
 	public static function is_protected( $post_id ) {
-		$credentials = self::get_all( $post_id );
-		return ! empty( $credentials );
+		if ( ! empty( self::get_all( $post_id ) ) ) {
+			return true;
+		}
+		return '1' === (string) get_post_meta( (int) $post_id, self::META_PROTECTED, true );
 	}
 
 	/**
@@ -152,7 +156,10 @@ class Pggd_Credentials {
 			'password_updated' => (int) $updated,
 		);
 
-		update_post_meta( $post_id, self::META_CREDENTIALS, $credentials );
+		// update_metadata() は内部でもう一度 wp_unslash() する。
+		// そのまま渡すとユーザー名のバックスラッシュが保存時に落ちるため、
+		// あらかじめ wp_slash() で1段ぶん増やしておく。
+		update_post_meta( $post_id, self::META_CREDENTIALS, wp_slash( $credentials ) );
 		// 一覧を meta_query で引くための索引を立てる。
 		update_post_meta( $post_id, self::META_PROTECTED, '1' );
 
@@ -192,14 +199,26 @@ class Pggd_Credentials {
 		$password = (string) $password;
 
 		$matched = false;
+		$checked = false;
+
 		foreach ( $credentials as $credential ) {
 			// 早期 return せず全組を回すことで、一致した位置による処理時間の差を減らす。
 			if ( ! hash_equals( $credential['username'], $username ) ) {
 				continue;
 			}
+			$checked = true;
 			if ( password_verify( $password, $credential['password_hash'] ) ) {
 				$matched = true;
 			}
+		}
+
+		if ( ! $checked ) {
+			// ユーザー名がどれとも一致しなかった場合、ここで打ち切ると
+			// password_verify() の計算時間ぶんだけ応答が速くなり、
+			// 「ユーザー名が違う」ことを応答時間から判別できてしまう。
+			// 保存済みのハッシュ（＝同じアルゴリズムとコスト）に対して
+			// 必ず1回検証を回し、処理時間を揃える。結果は使わない。
+			password_verify( $password, $credentials[0]['password_hash'] );
 		}
 
 		return $matched;

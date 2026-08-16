@@ -27,6 +27,35 @@ class Pggd_Auth {
 	}
 
 	/**
+	 * 表示中の投稿に対して、保護の判定に使う投稿IDを返す。
+	 *
+	 * 添付ファイルページ（/?attachment_id=... や添付ファイルのパーマリンク）は
+	 * is_singular() が true になるが、対象は添付ファイル自身なので
+	 * そのままでは保護判定に引っかからず素通りする。
+	 * 保護したページに挿入した画像や PDF の「添付ファイルページ」が
+	 * 未認証で開けてしまうため、親投稿の保護を引き継ぐ。
+	 *
+	 * なお、Web サーバーが直接返すファイル URL そのもの（wp-content/uploads/...）は
+	 * WordPress を通らないため、これとは別に原理的に保護できない。
+	 *
+	 * @param WP_Post $post 表示中の投稿。
+	 * @return int 保護の判定に使う投稿ID。
+	 */
+	private static function resolve_target_id( $post ) {
+		$target_id = (int) $post->ID;
+
+		if ( Pggd_Credentials::is_protected( $target_id ) ) {
+			return $target_id;
+		}
+
+		if ( 'attachment' === $post->post_type && $post->post_parent ) {
+			return (int) $post->post_parent;
+		}
+
+		return $target_id;
+	}
+
+	/**
 	 * 保護対象ページなら BASIC 認証を要求する。
 	 *
 	 * @return void
@@ -53,10 +82,13 @@ class Pggd_Auth {
 			return;
 		}
 
+		// 添付ファイルページは親投稿の保護を引き継ぐ。
+		$target_id = self::resolve_target_id( $post );
+
 		// 資格情報が保存されているかどうかだけで判定する。
 		// 対象投稿タイプの設定（pggd_post_types）はメタボックスを出す範囲の設定であって、
 		// これを認証側の条件にすると、設定変更だけで保護済みページが素通しになってしまう。
-		if ( ! Pggd_Credentials::is_protected( $post->ID ) ) {
+		if ( ! Pggd_Credentials::is_protected( $target_id ) ) {
 			return;
 		}
 
@@ -67,9 +99,10 @@ class Pggd_Auth {
 			define( 'DONOTCACHEPAGE', true );
 		}
 		nocache_headers();
+		self::send_vary_header();
 
 		// その投稿の編集権限を持つログインユーザーは認証をスキップする（docs/spec.md 6）。
-		if ( is_user_logged_in() && current_user_can( 'edit_post', $post->ID ) ) {
+		if ( is_user_logged_in() && current_user_can( 'edit_post', $target_id ) ) {
 			return;
 		}
 
@@ -77,29 +110,44 @@ class Pggd_Auth {
 
 		// ロック中は資格情報が正しくても通さない。
 		if ( Pggd_Lockout::is_locked( $ip ) ) {
-			self::send_locked( $post->ID, Pggd_Lockout::get_unlock_time( $ip ) );
+			self::send_locked( $target_id, Pggd_Lockout::get_unlock_time( $ip ) );
 		}
 
 		$submitted = self::get_submitted_credentials();
 
 		// 資格情報が送られていない＝最初のアクセス。失敗として数えず認証を要求する。
 		if ( null === $submitted ) {
-			self::send_challenge( $post->ID );
+			self::send_challenge( $target_id );
 		}
 
-		if ( Pggd_Credentials::verify( $post->ID, $submitted['username'], $submitted['password'] ) ) {
+		if ( Pggd_Credentials::verify( $target_id, $submitted['username'], $submitted['password'] ) ) {
 			// 成功したら失敗回数を消す。
 			Pggd_Lockout::clear( $ip );
 			return;
 		}
 
 		// 失敗を記録し、この失敗でロックに達したらロック応答へ切り替える。
-		$locked = Pggd_Lockout::record_failure( $ip );
-		if ( $locked ) {
-			self::send_locked( $post->ID, Pggd_Lockout::get_unlock_time( $ip ) );
+		if ( Pggd_Lockout::record_failure( $ip ) ) {
+			self::send_locked( $target_id, Pggd_Lockout::get_unlock_time( $ip ) );
 		}
 
-		self::send_challenge( $post->ID );
+		self::send_challenge( $target_id );
+	}
+
+	/**
+	 * Vary ヘッダを送る。
+	 *
+	 * no-store を尊重しない前段のキャッシュ（CDN・リバースプロキシ）が、
+	 * 認証済みの応答と未認証の応答を同じものとして扱わないようにするための保険。
+	 *
+	 * @return void
+	 */
+	private static function send_vary_header() {
+		if ( headers_sent() ) {
+			return;
+		}
+		// 第2引数 false で、既にある Vary を消さずに足す。
+		header( 'Vary: Authorization', false );
 	}
 
 	/**
@@ -193,12 +241,14 @@ class Pggd_Auth {
 	 */
 	private static function send_challenge( $post_id ) {
 		nocache_headers();
+		self::send_vary_header();
 		header( 'WWW-Authenticate: Basic realm="' . self::get_realm() . '", charset="UTF-8"' );
 		status_header( 401 );
 
 		$title = __( '認証が必要です', 'pageguard' );
 		$body  = __( 'このページを表示するにはユーザー名とパスワードが必要です。', 'pageguard' ) . "\n"
-			. __( 'ページの管理者からお知らせされたユーザー名とパスワードを入力してください。', 'pageguard' );
+			. __( '入力欄が表示されなかった場合や、入力をキャンセルした場合は、下のボタンからもう一度お試しください。', 'pageguard' ) . "\n"
+			. __( 'ユーザー名とパスワードが分からない場合は、このページの管理者にお問い合わせください。', 'pageguard' );
 
 		/**
 		 * 401 画面の見出しを差し替えるフィルター。
@@ -218,7 +268,24 @@ class Pggd_Auth {
 		 */
 		$body = (string) apply_filters( 'pggd_unauthorized_message', $body, $post_id );
 
-		self::render_page( $title, $body );
+		self::render_page(
+			$title,
+			$body,
+			array(
+				// href を空にすると同じ URL への再読み込みになる。
+				// 再読み込みするとブラウザが認証ダイアログを出し直す。
+				array(
+					'url'     => '',
+					'label'   => __( 'もう一度入力する', 'pageguard' ),
+					'primary' => true,
+				),
+				array(
+					'url'     => home_url( '/' ),
+					'label'   => __( 'サイトのトップへ戻る', 'pageguard' ),
+					'primary' => false,
+				),
+			)
+		);
 	}
 
 	/**
@@ -234,6 +301,7 @@ class Pggd_Auth {
 	 */
 	private static function send_locked( $post_id, $unlock_time ) {
 		nocache_headers();
+		self::send_vary_header();
 		status_header( 429 );
 
 		$retry_after = (int) $unlock_time - time();
@@ -245,10 +313,11 @@ class Pggd_Auth {
 		$minutes = (int) ceil( $retry_after / 60 );
 
 		$title = __( 'しばらく認証を受け付けられません', 'pageguard' );
-		$body  = __( 'ユーザー名またはパスワードの誤りが続いたため、このアクセス元からの認証を一時的に停止しています。', 'pageguard' ) . "\n"
+		$body  = __( 'ユーザー名またはパスワードの誤りが続いたため、お使いの回線からの認証を一時的に停止しています。', 'pageguard' ) . "\n"
+			. __( 'オフィスや携帯電話の回線では、同じ回線を使っている他の方の入力ミスが原因のこともあります。', 'pageguard' ) . "\n"
 			. sprintf(
 				/* translators: %d: 待つ必要のある分数 */
-				__( 'およそ %d 分後に、もう一度お試しください。', 'pageguard' ),
+				__( 'およそ %d 分後にこのページを再度開くと、もう一度入力できます。', 'pageguard' ),
 				$minutes
 			);
 
@@ -271,7 +340,17 @@ class Pggd_Auth {
 		 */
 		$body = (string) apply_filters( 'pggd_locked_message', $body, $post_id, $retry_after );
 
-		self::render_page( $title, $body );
+		self::render_page(
+			$title,
+			$body,
+			array(
+				array(
+					'url'     => home_url( '/' ),
+					'label'   => __( 'サイトのトップへ戻る', 'pageguard' ),
+					'primary' => false,
+				),
+			)
+		);
 	}
 
 	/**
@@ -280,11 +359,12 @@ class Pggd_Auth {
 	 * テーマのテンプレートを通すと、保護しているページの断片（サイドバーの
 	 * 最近の投稿など）が漏れる可能性があるため、自前の固定 HTML を返す。
 	 *
-	 * @param string $title 見出し。
-	 * @param string $body  本文（改行区切り）。
+	 * @param string $title   見出し。
+	 * @param string $body    本文（改行区切り）。
+	 * @param array  $actions 行き先のリンク。url / label / primary を持つ配列の配列。
 	 * @return void
 	 */
-	private static function render_page( $title, $body ) {
+	private static function render_page( $title, $body, $actions = array() ) {
 		header( 'Content-Type: text/html; charset=' . get_bloginfo( 'charset' ) );
 
 		$lines = preg_split( '/\r\n|\r|\n/', (string) $body );
@@ -292,18 +372,36 @@ class Pggd_Auth {
 			$lines = array( (string) $body );
 		}
 
+		$site_name  = wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES );
+		$page_title = ( '' !== trim( (string) $site_name ) )
+			? $title . ' | ' . $site_name
+			: $title;
+
 		?><!DOCTYPE html>
 <html lang="<?php echo esc_attr( get_bloginfo( 'language' ) ); ?>">
 <head>
 <meta charset="<?php echo esc_attr( get_bloginfo( 'charset' ) ); ?>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title><?php echo esc_html( $title ); ?></title>
+<title><?php echo esc_html( $page_title ); ?></title>
 <style>
 body { margin: 0; padding: 3em 1.5em; background: #f0f0f1; color: #1d2327; font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif; line-height: 1.7; }
 .pggd-box { max-width: 32em; margin: 0 auto; padding: 1.75em 2em; background: #fff; border: 1px solid #dcdcde; border-radius: 4px; }
 .pggd-box h1 { margin: 0 0 .75em; font-size: 1.25em; }
 .pggd-box p { margin: 0 0 .5em; }
+.pggd-actions { margin: 1.5em 0 0; display: flex; flex-wrap: wrap; gap: .75em; }
+.pggd-actions a { display: inline-block; padding: .5em 1.25em; border: 1px solid #2271b1; border-radius: 3px; color: #2271b1; text-decoration: none; }
+.pggd-actions a:hover, .pggd-actions a:focus { background: #f0f6fc; }
+.pggd-actions a.pggd-primary { background: #2271b1; color: #fff; }
+.pggd-actions a.pggd-primary:hover, .pggd-actions a.pggd-primary:focus { background: #135e96; border-color: #135e96; }
+@media (prefers-color-scheme: dark) {
+	body { background: #1d2327; color: #f0f0f1; }
+	.pggd-box { background: #2c3338; border-color: #3c434a; }
+	.pggd-actions a { border-color: #72aee6; color: #72aee6; }
+	.pggd-actions a:hover, .pggd-actions a:focus { background: #32373c; }
+	.pggd-actions a.pggd-primary { background: #2271b1; border-color: #2271b1; color: #fff; }
+	.pggd-actions a.pggd-primary:hover, .pggd-actions a.pggd-primary:focus { background: #135e96; border-color: #135e96; }
+}
 </style>
 </head>
 <body>
@@ -313,6 +411,13 @@ body { margin: 0; padding: 3em 1.5em; background: #f0f0f1; color: #1d2327; font-
 	<?php if ( '' === trim( $line ) ) { continue; } ?>
 <p><?php echo esc_html( $line ); ?></p>
 <?php endforeach; ?>
+<?php if ( ! empty( $actions ) ) : ?>
+<div class="pggd-actions">
+	<?php foreach ( $actions as $action ) : ?>
+	<a href="<?php echo esc_url( $action['url'] ); ?>"<?php echo ! empty( $action['primary'] ) ? ' class="pggd-primary"' : ''; ?>><?php echo esc_html( $action['label'] ); ?></a>
+	<?php endforeach; ?>
+</div>
+<?php endif; ?>
 </div>
 </body>
 </html>

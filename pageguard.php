@@ -15,13 +15,13 @@
  * @package pageguard
  */
 
-define( 'PGGD_VERSION', '1.0.0' );
-// プラグイン一覧行（plugin_row_meta）で自プラグインを判定するために使う。
-define( 'PGGD_PLUGIN_FILE', __FILE__ );
-
 if ( ! defined( 'ABSPATH' ) ) {
 	exit; // 直接アクセスされた場合は終了する。
 }
+
+define( 'PGGD_VERSION', '1.0.0' );
+// プラグイン一覧行（plugin_row_meta）で自プラグインを判定するために使う。
+define( 'PGGD_PLUGIN_FILE', __FILE__ );
 
 require_once( dirname( __FILE__ ) . '/inc/func.php' );
 

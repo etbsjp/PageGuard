@@ -20,9 +20,6 @@ require_once( dirname( __FILE__ ) . '/class-lockout.php' );
 require_once( dirname( __FILE__ ) . '/class-auth.php' );
 require_once( dirname( __FILE__ ) . '/class-meta-box.php' );
 
-Pggd_Auth::init();
-Pggd_Meta_Box::init();
-
 /*-------------------------------------------*/
 /* 設定値ヘルパー
 /* 設定画面は別 issue のスコープ。ここでは読み取りと既定値だけを持つ。
@@ -95,6 +92,14 @@ if ( ! function_exists( 'pggd_get_lockout_seconds' ) ) {
 }
 
 /*-------------------------------------------*/
+/* フックの登録
+/* 上の設定値ヘルパーは function_exists() で囲んだ条件付き定義のため、
+/* 定義文が実行されるまで呼び出せない。init() より前に置くこと。
+/*-------------------------------------------*/
+Pggd_Auth::init();
+Pggd_Meta_Box::init();
+
+/*-------------------------------------------*/
 /* 支援・依頼リンク（プラグイン一覧行）
 /* 【既知の罠】コールバックは4引数で受ける。3引数で書くと、
 /* 他プラグイン（CBX 等）のコールバックが ArgumentCountError で落ちる。
@@ -156,6 +161,7 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 	function pggd_render_dashboard_widget() {
 		?>
 		<p><?php esc_html_e( 'ページごとに独立したユーザー名 / パスワードで BASIC 認証をかけられます。保護したいページの編集画面で設定してください。', 'pageguard' ); ?></p>
+		<p><?php esc_html_e( '初期設定では固定ページだけが対象です。投稿やカスタム投稿タイプの編集画面には設定欄が出ません。', 'pageguard' ); ?></p>
 
 		<p>
 			<strong><?php esc_html_e( 'ご注意', 'pageguard' ); ?></strong><br>
