@@ -56,6 +56,21 @@ class Pggd_Lockout {
 	const WRITE_RETRIES = 5;
 
 	/**
+	 * write() の戻り値: 書き込めた。
+	 */
+	const WRITE_OK = 1;
+
+	/**
+	 * write() の戻り値: 他のリクエストが先に書いた（やり直せば通る）。
+	 */
+	const WRITE_CONFLICT = 0;
+
+	/**
+	 * write() の戻り値: データベース側の障害（やり直しても直らない）。
+	 */
+	const WRITE_DB_ERROR = -1;
+
+	/**
 	 * 接続元 IP アドレスを返す。
 	 *
 	 * REMOTE_ADDR だけを見る。X-Forwarded-For などのリクエストヘッダは
@@ -139,13 +154,17 @@ class Pggd_Lockout {
 	 *
 	 * 読み込んだ時点の値と現在の値が一致するときだけ更新する
 	 * （compare-and-swap）。一致しなければ他のリクエストが先に書いた
-	 * ということなので false を返し、呼び出し側でやり直す。
+	 * ということなので WRITE_CONFLICT を返し、呼び出し側でやり直す。
 	 * 判定と更新は 1 本の UPDATE 文の中で行われるため、
 	 * PHP 側で読んでから書くまでの隙間に割り込まれても取りこぼさない。
 	 *
+	 * データベース側の障害は「やり直せば通る競合」とは別物なので区別する。
+	 * 取り違えると、障害が続くあいだ黙って計上を諦め続け、
+	 * 総当たり対策だけが誰にも気づかれずに無効化される。
+	 *
 	 * @param string|null $previous_raw 読み込んだ時点の生の値。
 	 * @param array       $records      書き込むレコード配列。
-	 * @return bool 書き込めたら true。競合したら false。
+	 * @return int WRITE_OK / WRITE_CONFLICT / WRITE_DB_ERROR のいずれか。
 	 */
 	private static function write( $previous_raw, $records ) {
 		global $wpdb;
@@ -158,9 +177,9 @@ class Pggd_Lockout {
 			// 失われうる）が、0件から1件目を書く瞬間に限られる。
 			$added = add_option( self::OPTION, $records, '', false );
 			if ( ! $added ) {
-				return false; // 別のリクエストが先に作った。やり直す。
+				return self::WRITE_CONFLICT; // 別のリクエストが先に作った。やり直す。
 			}
-			return true;
+			return self::WRITE_OK;
 		}
 
 		$updated = $wpdb->query(
@@ -172,16 +191,25 @@ class Pggd_Lockout {
 			)
 		);
 
+		if ( false === $updated ) {
+			// SQL の実行そのものに失敗している。やり直しても直らない。
+			error_log( 'PageGuard: 総当たり対策の記録を更新できませんでした: ' . $wpdb->last_error );
+			return self::WRITE_DB_ERROR;
+		}
+
 		// 書き込む内容が読み込んだ時点とまったく同じ場合、
 		// MySQL は「変更なし」として 0 行を返す。これは競合ではないので成功扱いにする。
 		if ( $updated < 1 && $new_raw !== $previous_raw ) {
-			return false;
+			return self::WRITE_CONFLICT;
 		}
 
 		// 直接 UPDATE したので、オプションのキャッシュを捨てて読み直させる。
+		// notoptions（「この名前のオプションは存在しない」という記録）も消しておく。
+		// 残っていると、後から get_option() で読んだときに未設定と誤認されうる。
 		wp_cache_delete( self::OPTION, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
 
-		return true;
+		return self::WRITE_OK;
 	}
 
 	/**
@@ -246,6 +274,20 @@ class Pggd_Lockout {
 
 		// キーは重複しないので、そのまま結合してよい。
 		return $locked + $unlocked;
+	}
+
+	/**
+	 * 有効なレコードをすべて返す。
+	 *
+	 * このクラスの外からロック状況を読むときは、必ずこのメソッドを使うこと。
+	 * get_option() を直接呼ぶと、直接 UPDATE している都合で
+	 * 古いキャッシュや期限切れのレコードを掴む可能性がある。
+	 * 後続の設定画面（ロック中 IP の一覧・解除）もここを入り口にする。
+	 *
+	 * @return array レコード配列（キーは送信元のハッシュ）。
+	 */
+	public static function get_all_records() {
+		return self::prune( self::decode( self::read_raw() ) );
 	}
 
 	/**
@@ -346,8 +388,14 @@ class Pggd_Lockout {
 				'expires'  => $locked > 0 ? $locked : $now + $seconds,
 			);
 
-			if ( self::write( $raw, $records ) ) {
+			$result = self::write( $raw, $records );
+
+			if ( self::WRITE_OK === $result ) {
 				return $locked > 0;
+			}
+			if ( self::WRITE_DB_ERROR === $result ) {
+				// やり直しても直らない。記録済みのログを頼りに調査してもらう。
+				return false;
 			}
 		}
 
@@ -377,7 +425,9 @@ class Pggd_Lockout {
 			unset( $records[ $key ] );
 			$records = self::prune( $records );
 
-			if ( self::write( $raw, $records ) ) {
+			$result = self::write( $raw, $records );
+
+			if ( self::WRITE_OK === $result || self::WRITE_DB_ERROR === $result ) {
 				return;
 			}
 		}

@@ -4,13 +4,22 @@
  * クラシックエディタでは HTML5 の required とサーバー側の検証で成立するが、
  * ブロックエディタはメタボックスを FormData ＋ apiFetch で送るため
  * required も reportValidity() も走らない。そのため、この JavaScript が
- * 次の4つを引き受ける。
+ * 次の5つを引き受ける。
  *
  *  1. ブロックエディタに「未保存の変更がある」と伝える（無いと「更新」が押せない）
  *  2. 入力が不足しているうちは lockPostSaving() で「更新」自体を止める
- *     （「更新しました」と出るのにページが無保護のまま、を防ぐ）
  *  3. メタボックス保存の完了を検知して、状態表示・ラベル・入力欄を描き直す
- *  4. ラジオ連動の警告表示・required の付け外し・パスワードの表示切替
+ *  4. 保存結果の通知をエディタ内へ即時に出す
+ *     （出さないと、警告・エラーが「次に編集画面を開いたとき」まで届かない）
+ *  5. ラジオ連動の警告表示・required の付け外し・パスワードの表示切替
+ *
+ * ■「保護中」と「パスワードが読める」は別物
+ *
+ * isProtected は索引だけが残った壊れた状態でも 1 になる。
+ * その状態では既存のハッシュが読めず、パスワードの入力が必須になる。
+ * 必須判定と表示の出し分けは、必ず hasCredential 側を見ること。
+ * ここを取り違えると、画面が「入力しなくていい」と言いながら
+ * サーバーが弾く、出口の無い状態になる。
  */
 ( function() {
 	'use strict';
@@ -37,7 +46,8 @@
 	var passActions = document.getElementById( 'pggd-password-actions' );
 
 	// 保存後に変わりうるので、変数として持ち回る。
-	var hasPassword    = ( 1 === parseInt( data.hasPassword, 10 ) );
+	var isProtected    = ( 1 === parseInt( data.isProtected, 10 ) );
+	var hasCredential  = ( 1 === parseInt( data.hasCredential, 10 ) );
 	var lastProblemKey = null;
 
 	/**
@@ -86,6 +96,33 @@
 	 * ------------------------------------------------------------------ */
 
 	/**
+	 * メタボックスを開いて画面内に入れ、最初の未入力欄へフォーカスする。
+	 * 「更新」を止めるからには、直す場所への導線をセットで用意する。
+	 */
+	function focusMetaBox() {
+		// 折りたたまれている場合があるので開く。
+		box.classList.remove( 'closed' );
+		var toggle = box.querySelector( '.handlediv' );
+		if ( toggle ) {
+			toggle.setAttribute( 'aria-expanded', 'true' );
+		}
+
+		if ( box.scrollIntoView ) {
+			box.scrollIntoView( { block: 'center' } );
+		}
+
+		var target = null;
+		if ( username && '' === username.value.replace( /^\s+|\s+$/g, '' ) ) {
+			target = username;
+		} else if ( password && '' === password.value && ! hasCredential ) {
+			target = password;
+		}
+		if ( target ) {
+			target.focus();
+		}
+	}
+
+	/**
 	 * 現在の入力内容から、保存を止めるべき理由の一覧を返す。
 	 * サーバー側 save() の検証と同じ条件にしてある。
 	 */
@@ -99,16 +136,30 @@
 		var user = username ? username.value.replace( /^\s+|\s+$/g, '' ) : '';
 		var pass = password ? password.value : '';
 
-		if ( '' === user ) {
+		var userEmpty = ( '' === user );
+		// パスワードの必須判定は hasCredential（既存のハッシュが読めるか）で行う。
+		var passEmpty = ( '' === pass && ! hasCredential );
+
+		// 両方空のときは1文にまとめる（同じ形の文を2つ並べない）。
+		if ( userEmpty && passEmpty ) {
+			problems.push( i18n.bothEmpty || '' );
+			return problems;
+		}
+
+		if ( userEmpty ) {
 			problems.push( i18n.usernameEmpty || '' );
+		} else if ( /[\x00-\x1F\x7F]/.test( user ) ) {
+			problems.push( i18n.usernameControlChars || '' );
 		} else if ( -1 !== user.indexOf( ':' ) ) {
 			problems.push( i18n.usernameColon || '' );
 		} else if ( /[^\x20-\x7E]/.test( user ) ) {
 			problems.push( i18n.usernameNonAscii || '' );
 		}
 
-		if ( '' === pass && ! hasPassword ) {
+		if ( passEmpty ) {
 			problems.push( i18n.passwordEmpty || '' );
+		} else if ( '' !== pass && /[\x00-\x1F\x7F]/.test( pass ) ) {
+			problems.push( i18n.passwordControlChars || '' );
 		} else if ( '' !== pass && /[^\x20-\x7E]/.test( pass ) ) {
 			problems.push( i18n.passwordNonAscii || '' );
 		}
@@ -127,7 +178,7 @@
 		}
 
 		var dispatchNotices = getStore( 'core/notices', 'dispatch' );
-		var key             = problems.join( '\n' );
+		var key             = problems.join( '' );
 
 		// 内容が変わっていないなら再通知しない（打鍵のたびに再描画させない）。
 		if ( key === lastProblemKey ) {
@@ -139,10 +190,16 @@
 			dispatchEditor.lockPostSaving( LOCK_KEY );
 			if ( dispatchNotices && 'function' === typeof dispatchNotices.createErrorNotice ) {
 				dispatchNotices.createErrorNotice(
-					( i18n.blockedPrefix || '' ) + ' ' + problems.join( ' / ' ),
+					( i18n.blockedPrefix || '' ) + problems.join( '' ) + ( i18n.blockedHelp || '' ),
 					{
 						id: NOTICE_ID,
-						isDismissible: false
+						isDismissible: false,
+						actions: [
+							{
+								label: i18n.blockedAction || '',
+								onClick: focusMetaBox
+							}
+						]
 					}
 				);
 			}
@@ -158,7 +215,7 @@
 	}
 
 	/* ------------------------------------------------------------------
-	 * 4. ラジオ連動の表示切り替え
+	 * 5. ラジオ連動の表示切り替え
 	 * ------------------------------------------------------------------ */
 	function setRequired( element, required ) {
 		if ( ! element ) {
@@ -181,7 +238,7 @@
 		 * このスクリプトが動かない環境では表示されたままになる（安全側）。
 		 */
 		if ( warning ) {
-			if ( hasPassword && ! wantsProtection ) {
+			if ( isProtected && ! wantsProtection ) {
 				warning.removeAttribute( 'hidden' );
 			} else {
 				warning.setAttribute( 'hidden', 'hidden' );
@@ -194,8 +251,8 @@
 		 * ブラウザの入力チェックで止まってしまう。
 		 */
 		setRequired( username, wantsProtection );
-		// パスワードが未設定のときだけ必須。設定済みなら空欄＝変更なし。
-		setRequired( password, wantsProtection && ! hasPassword );
+		// 既存のパスワードが読めるときだけ空欄を許す。
+		setRequired( password, wantsProtection && ! hasCredential );
 
 		applySaveLock( collectProblems() );
 	}
@@ -209,8 +266,8 @@
 		}
 
 		var button = document.createElement( 'button' );
-		button.type      = 'button';
-		button.className = 'button pggd-toggle-password';
+		button.type        = 'button';
+		button.className   = 'button pggd-toggle-password';
 		button.textContent = i18n.showLabel || '';
 		/*
 		 * aria-pressed は付けない。「パスワードを隠す、押されています」のように
@@ -230,15 +287,114 @@
 		passActions.appendChild( button );
 	}
 
+	/*
+	 * 確認用 URL のコピーボタン。状態表示は差し替えられるので、
+	 * 個々の要素ではなくメタボックスに対して委譲で拾う。
+	 */
+	function setupCopyButton() {
+		if ( ! navigator.clipboard || ! stateBox ) {
+			return;
+		}
+
+		box.addEventListener( 'click', function( event ) {
+			var trigger = event.target.closest ? event.target.closest( '.pggd-copy-url' ) : null;
+			if ( ! trigger ) {
+				return;
+			}
+			var url = document.getElementById( 'pggd-verify-url' );
+			if ( ! url ) {
+				return;
+			}
+			navigator.clipboard.writeText( url.textContent ).then( function() {
+				trigger.textContent = i18n.copiedLabel || '';
+			} ).catch( function() {
+				// コピーできなくても URL は画面に出ているので手で選択できる。
+			} );
+		} );
+	}
+
+	/**
+	 * 状態表示の中にコピーボタンを差し込む（クリップボードが使えるときだけ）。
+	 */
+	function injectCopyButton() {
+		if ( ! navigator.clipboard ) {
+			return;
+		}
+		var row = stateBox ? stateBox.querySelector( '.pggd-url-row' ) : null;
+		if ( ! row || row.querySelector( '.pggd-copy-url' ) ) {
+			return;
+		}
+		var button = document.createElement( 'button' );
+		button.type        = 'button';
+		button.className   = 'button button-small pggd-copy-url';
+		button.textContent = i18n.copyLabel || '';
+		row.appendChild( button );
+	}
+
 	/* ------------------------------------------------------------------
-	 * 3. メタボックス保存の完了を検知して表示を描き直す
+	 * 3 と 4. メタボックス保存の完了を検知して、表示と通知を更新する
 	 *
 	 * ブロックエディタはメタボックスを POST したあと応答を読み捨てるため、
 	 * 放っておくと状態表示が保存前のまま残り、
 	 * 「保護されていません」と出したまま実際は保護済み、という嘘になる。
+	 * 保存結果の通知も同じ理由で届かないので、ここで一緒に受け取る。
 	 * ------------------------------------------------------------------ */
+
+	/**
+	 * 状態が分からなくなったことを画面に出す。
+	 * 知らない状態を断定表示させない（古い表示を残すと嘘をつき続ける）。
+	 */
+	function showStateFailure( message ) {
+		if ( ! stateBox ) {
+			return;
+		}
+
+		var wrapper = document.createElement( 'div' );
+		wrapper.className = 'notice notice-warning inline pggd-state-note';
+
+		var text = document.createElement( 'p' );
+		text.textContent = message || i18n.stateFailed || '';
+		wrapper.appendChild( text );
+
+		var actions = document.createElement( 'p' );
+		var reload  = document.createElement( 'button' );
+		reload.type        = 'button';
+		reload.className   = 'button';
+		reload.textContent = i18n.reloadLabel || '';
+		reload.addEventListener( 'click', function() {
+			window.location.reload();
+		} );
+		actions.appendChild( reload );
+		wrapper.appendChild( actions );
+
+		stateBox.innerHTML = '';
+		stateBox.appendChild( wrapper );
+	}
+
+	/**
+	 * 保存結果の通知をエディタ内に出す。
+	 */
+	function showSavedNotices( notices ) {
+		if ( ! notices || ! notices.length ) {
+			return;
+		}
+		var dispatchNotices = getStore( 'core/notices', 'dispatch' );
+		if ( ! dispatchNotices || 'function' !== typeof dispatchNotices.createNotice ) {
+			return;
+		}
+		var index;
+		for ( index = 0; index < notices.length; index++ ) {
+			dispatchNotices.createNotice(
+				notices[ index ].status,
+				notices[ index ].text,
+				{ isDismissible: true }
+			);
+		}
+	}
+
 	function refreshState() {
 		if ( ! data.ajaxUrl || ! data.stateNonce || ! window.fetch ) {
+			showStateFailure( i18n.stateFailed );
 			return;
 		}
 
@@ -255,13 +411,18 @@
 			return response.json();
 		} ).then( function( result ) {
 			if ( ! result || ! result.success || ! result.data ) {
+				// nonce 切れや権限不足。古い表示を残さず、理由と復旧手段を出す。
+				var message = ( result && result.data && result.data.message ) ? result.data.message : i18n.stateFailed;
+				showStateFailure( message );
 				return;
 			}
 
-			hasPassword = ( 1 === parseInt( result.data.hasPassword, 10 ) );
+			isProtected   = ( 1 === parseInt( result.data.isProtected, 10 ) );
+			hasCredential = ( 1 === parseInt( result.data.hasCredential, 10 ) );
 
 			if ( stateBox ) {
 				stateBox.innerHTML = result.data.state;
+				injectCopyButton();
 			}
 			if ( passLabel ) {
 				passLabel.textContent = result.data.passwordLabel;
@@ -278,11 +439,22 @@
 					password.removeAttribute( 'placeholder' );
 				}
 			}
+			if ( username ) {
+				/*
+				 * 解除された場合はユーザー名も消す。残しておくと、
+				 * 次に何も触らず更新しただけで「入力を保存しませんでした」と
+				 * 身に覚えのない警告が出ることになる。
+				 */
+				username.value = result.data.username || '';
+			}
+
+			showSavedNotices( result.data.notices );
 
 			lastProblemKey = null; // 状態が変わったので通知を出し直させる。
 			syncUi();
 		} ).catch( function() {
-			// 取得に失敗しても編集は続けられる。表示が古いままになるだけ。
+			// 通信そのものに失敗した場合も、古い表示を残さない。
+			showStateFailure( i18n.stateFailed );
 		} );
 	}
 
@@ -310,6 +482,11 @@
 	/* ------------------------------------------------------------------
 	 * 組み立て
 	 * ------------------------------------------------------------------ */
+	function onInputChanged() {
+		markPostDirty();
+		syncUi();
+	}
+
 	var inputs = box.querySelectorAll( 'input' );
 	var index;
 	for ( index = 0; index < inputs.length; index++ ) {
@@ -317,12 +494,9 @@
 		inputs[ index ].addEventListener( 'input', onInputChanged );
 	}
 
-	function onInputChanged() {
-		markPostDirty();
-		syncUi();
-	}
-
 	buildToggleButton();
+	setupCopyButton();
+	injectCopyButton();
 	watchMetaBoxSaving();
 	syncUi();
 } )();
