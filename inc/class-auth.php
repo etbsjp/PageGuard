@@ -38,10 +38,13 @@ class Pggd_Auth {
 	 * なお、Web サーバーが直接返すファイル URL そのもの（wp-content/uploads/...）は
 	 * WordPress を通らないため、これとは別に原理的に保護できない。
 	 *
+	 * REST の入口（Pggd_Visibility）からも同じ読み替えが要るため public にしている。
+	 * 経路ごとに書くと、片方だけ添付ファイルの扱いが抜ける形で穴が空く。
+	 *
 	 * @param WP_Post $post 表示中の投稿。
 	 * @return int 保護の判定に使う投稿ID。
 	 */
-	private static function resolve_target_id( $post ) {
+	public static function resolve_target_id( $post ) {
 		$target_id = (int) $post->ID;
 
 		if ( Pggd_Credentials::is_protected( $target_id ) ) {

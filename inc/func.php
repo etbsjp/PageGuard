@@ -18,6 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once( dirname( __FILE__ ) . '/class-credentials.php' );
 require_once( dirname( __FILE__ ) . '/class-lockout.php' );
 require_once( dirname( __FILE__ ) . '/class-auth.php' );
+require_once( dirname( __FILE__ ) . '/class-visibility.php' );
 require_once( dirname( __FILE__ ) . '/class-meta-box.php' );
 
 /*-------------------------------------------*/
@@ -97,6 +98,7 @@ if ( ! function_exists( 'pggd_get_lockout_seconds' ) ) {
 /* 定義文が実行されるまで呼び出せない。init() より前に置くこと。
 /*-------------------------------------------*/
 Pggd_Auth::init();
+Pggd_Visibility::init();
 Pggd_Meta_Box::init();
 
 /*-------------------------------------------*/
@@ -167,6 +169,12 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 			<strong><?php esc_html_e( 'ご注意', 'pageguard' ); ?></strong><br>
 			<?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?>
 			<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
+		</p>
+
+		<p>
+			<?php esc_html_e( '保護中のページは、サイト内検索・一覧・フィード・サイトマップ・REST API から除外されます。', 'pageguard' ); ?>
+			<?php esc_html_e( 'ログイン中の管理者にも表示されません（表示を出し分けるとキャッシュ経由で他の訪問者へ配られる恐れがあるためです）。', 'pageguard' ); ?>
+			<?php esc_html_e( '保護中のページを探すときは、管理画面の投稿一覧をご利用ください。', 'pageguard' ); ?>
 		</p>
 
 		<p>
