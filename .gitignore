@@ -50,3 +50,6 @@ node_modules/
 .claude.me
 .claude/
 CLAUDE.local.md
+
+# macOS
+.DS_Store
