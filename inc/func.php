@@ -20,19 +20,48 @@ require_once( dirname( __FILE__ ) . '/class-lockout.php' );
 require_once( dirname( __FILE__ ) . '/class-auth.php' );
 require_once( dirname( __FILE__ ) . '/class-visibility.php' );
 require_once( dirname( __FILE__ ) . '/class-meta-box.php' );
+require_once( dirname( __FILE__ ) . '/class-settings.php' );
 
 /*-------------------------------------------*/
 /* 設定値ヘルパー
-/* 設定画面は別 issue のスコープ。ここでは読み取りと既定値だけを持つ。
 /*-------------------------------------------*/
+
+if ( ! function_exists( 'pggd_get_selectable_post_types' ) ) {
+	/**
+	 * 保護対象として選択できる投稿タイプの一覧を返す。
+	 *
+	 * 設定画面のチェックボックス（Pggd_Settings）と、保存値の検証（サニタイズ）の
+	 * どちらからも使うため、対象範囲の定義をここへ集約している。
+	 *
+	 * @return array 投稿タイプ名をキー、WP_Post_Type オブジェクトを値に持つ配列。
+	 */
+	function pggd_get_selectable_post_types() {
+		// 公開されていて編集 UI を持つ投稿タイプのみを対象にする。
+		$post_types = get_post_types(
+			array(
+				'public'  => true,
+				'show_ui' => true,
+			),
+			'objects'
+		);
+		unset( $post_types['attachment'] );
+
+		/**
+		 * 保護対象として選択できる投稿タイプを差し替えるフィルター。
+		 *
+		 * @param array $post_types 投稿タイプ名をキー、WP_Post_Type オブジェクトを値に持つ配列。
+		 */
+		return (array) apply_filters( 'pggd_selectable_post_types', $post_types );
+	}
+}
 
 if ( ! function_exists( 'pggd_get_target_post_types' ) ) {
 	/**
 	 * 保護設定 UI（メタボックス）の対象とする投稿タイプを返す。
 	 *
-	 * 既定は固定ページのみ（docs/spec.md 2）。
+	 * 既定は固定ページのみ（docs/spec.md 2）。設定画面（Pggd_Settings）で選べる。
 	 * 実在しない投稿タイプや非公開の投稿タイプが混ざっていても無視できるよう、
-	 * 公開投稿タイプと突き合わせて絞り込む。
+	 * 選択可能な投稿タイプ（pggd_get_selectable_post_types()）と突き合わせて絞り込む。
 	 *
 	 * @return array 投稿タイプ名の配列。
 	 */
@@ -42,16 +71,7 @@ if ( ! function_exists( 'pggd_get_target_post_types' ) ) {
 			$post_types = array( 'page' );
 		}
 
-		// 公開されていて編集 UI を持つ投稿タイプのみを対象にする。
-		$available = get_post_types(
-			array(
-				'public'  => true,
-				'show_ui' => true,
-			),
-			'names'
-		);
-		unset( $available['attachment'] );
-
+		$available  = array_keys( pggd_get_selectable_post_types() );
 		$post_types = array_values( array_intersect( $post_types, $available ) );
 
 		/**
@@ -100,6 +120,7 @@ if ( ! function_exists( 'pggd_get_lockout_seconds' ) ) {
 Pggd_Auth::init();
 Pggd_Visibility::init();
 Pggd_Meta_Box::init();
+Pggd_Settings::init();
 
 /*-------------------------------------------*/
 /* 支援・依頼リンク（プラグイン一覧行）
@@ -210,4 +231,34 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 		</p>
 		<?php
 	}
+}
+
+/*-------------------------------------------*/
+/* 支援・依頼リンク（設定画面のフッター）
+/* 【既知の罠】画面IDで絞らないと、全管理画面のフッターを乗っ取ってしまう。
+/* PageGuard の設定画面（settings_page_pageguard）でだけ差し替える。
+/*-------------------------------------------*/
+if ( ! function_exists( 'pggd_admin_footer_text' ) ) {
+	/**
+	 * PageGuard の設定画面のフッター文言を、支援・依頼リンク付きに差し替える。
+	 *
+	 * @param string $text 既定のフッター文言。
+	 * @return string フッター文言。
+	 */
+	function pggd_admin_footer_text( $text ) {
+		$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+		if ( ! $screen || 'settings_page_pageguard' !== $screen->id ) {
+			return $text;
+		}
+
+		return sprintf(
+			/* translators: 1: 開発を支援ページへのリンク開始タグ, 2: リンク終了タグ, 3: 開発のご依頼ページへのリンク開始タグ, 4: リンク終了タグ */
+			esc_html__( 'PageGuard の開発は %1$sご支援%2$s いただけます。カスタマイズのご依頼は %3$sこちら%4$s から。', 'pageguard' ),
+			'<a href="' . esc_url( 'https://etbs.jp/product/donate/?utm_source=pageguard&utm_medium=plugin' ) . '" target="_blank" rel="noopener noreferrer">',
+			'</a>',
+			'<a href="' . esc_url( 'https://etbs.jp/product-category/wordpress-tools/?utm_source=pageguard&utm_medium=plugin' ) . '" target="_blank" rel="noopener noreferrer">',
+			'</a>'
+		);
+	}
+	add_filter( 'admin_footer_text', 'pggd_admin_footer_text' );
 }
