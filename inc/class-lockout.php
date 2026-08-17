@@ -104,6 +104,14 @@ class Pggd_Lockout {
 	const WRITE_DB_ERROR = -1;
 
 	/**
+	 * build_key() が返すレコードキーの形式（sha256 の先頭32文字＝16進32桁の小文字）。
+	 *
+	 * unlock_by_key() 自身の検証と、呼び出し側（設定画面）の検証の両方で使い、
+	 * 形式の定義を1箇所に集約する。
+	 */
+	const KEY_PATTERN = '/^[0-9a-f]{32}$/';
+
+	/**
 	 * 接続元 IP アドレスを返す。
 	 *
 	 * REMOTE_ADDR だけを見る。X-Forwarded-For などのリクエストヘッダは
@@ -625,7 +633,8 @@ class Pggd_Lockout {
 	 */
 	public static function unlock_by_key( $key ) {
 		$key = (string) $key;
-		if ( '' === $key ) {
+		// 呼び出し側の検証を信用せず、この関数自身でも形式を確かめる（自己完結にする）。
+		if ( ! preg_match( self::KEY_PATTERN, $key ) ) {
 			return false;
 		}
 

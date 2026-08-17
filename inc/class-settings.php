@@ -412,7 +412,9 @@ class Pggd_Settings {
 				<?php
 				settings_fields( self::OPTION_GROUP );
 				do_settings_sections( self::PAGE_SLUG );
-				submit_button( __( '設定を保存', 'pageguard' ) );
+				// id を明示しないと submit_button() は $name（既定 'submit'）を id にするため、
+				// 他フォームの送信ボタンと id が重複する（診断実行・行ごとの解除ボタン）。
+				submit_button( __( '設定を保存', 'pageguard' ), 'primary', 'submit', true, array( 'id' => 'pggd_save_submit' ) );
 				?>
 			</form>
 
@@ -502,31 +504,32 @@ class Pggd_Settings {
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="<?php echo esc_attr( self::DIAG_ACTION ); ?>">
 			<?php wp_nonce_field( self::DIAG_ACTION, 'pggd_diag_nonce' ); ?>
-			<?php submit_button( __( '診断を実行', 'pageguard' ), 'secondary', 'submit', false ); ?>
+			<?php submit_button( __( '診断を実行', 'pageguard' ), 'secondary', 'submit', false, array( 'id' => 'pggd_diag_submit' ) ); ?>
 		</form>
 		<?php
 	}
 
 	/**
-	 * 受信診断の結果表示（成功 / 失敗 / 診断できず）を出力する。
+	 * 受信診断の結果表示（成功 / 失敗 / 診断できず / 未実施）を出力する。
 	 *
-	 * 診断を一度も実行していない場合は「診断できず」と同じ扱いにする。
-	 * 実行していない時点では環境の適否が不明であり、安全側（.htaccess スニペットを
-	 * 保険的に見せる側）に倒すのが、実行し忘れたまま気付かず運用されるより安全なため。
+	 * 「診断できず」と「未実施」は原因が違う（前者は実行したが判定できなかった、
+	 * 後者はまだ一度も実行していない）ため、文言と見た目（notice の色）を分けている。
+	 * ただし .htaccess スニペットは、成功以外の全状態（未実施も含む）で保険的に表示する。
+	 * 実行し忘れたまま気付かず運用されるより、常に見える側が安全なため。
 	 *
 	 * @param array|null $result get_diagnosis_result() の戻り値。
 	 * @return void
 	 */
 	private static function render_diagnosis_result( $result ) {
 		if ( null === $result ) {
-			$status     = 'unknown';
-			$checked_at = 0;
-			$detail     = __( 'まだ診断を実行していません。', 'pageguard' );
-		} else {
-			$status     = $result['status'];
-			$checked_at = $result['checked_at'];
-			$detail     = $result['detail'];
+			self::render_diagnosis_not_run_notice();
+			self::render_htaccess_snippet();
+			return;
 		}
+
+		$status     = $result['status'];
+		$checked_at = $result['checked_at'];
+		$detail     = $result['detail'];
 
 		$labels = array(
 			'success' => array(
@@ -539,18 +542,15 @@ class Pggd_Settings {
 			),
 			'unknown' => array(
 				'class' => 'notice-warning',
-				'text'  => __( '診断できませんでした。', 'pageguard' ),
+				// サーバーやネットワークの都合で判定できなかっただけで、失敗と決まったわけではない。
+				// 次に何をすればよいか（下の設定例を試す）まで書く。
+				'text'  => __( 'サーバーからの応答を確認できなかったため、診断できませんでした。下記の設定例をお試しください。', 'pageguard' ),
 			),
 		);
 		$label = isset( $labels[ $status ] ) ? $labels[ $status ] : $labels['unknown'];
 		?>
 		<div class="notice inline <?php echo esc_attr( $label['class'] ); ?> pggd-diagnosis-result">
-			<p>
-				<strong><?php echo esc_html( $label['text'] ); ?></strong>
-				<?php if ( '' !== $detail ) : ?>
-					<?php echo esc_html( $detail ); ?>
-				<?php endif; ?>
-			</p>
+			<p><strong><?php echo esc_html( $label['text'] ); ?></strong></p>
 			<?php if ( $checked_at > 0 ) : ?>
 				<p class="description">
 					<?php
@@ -562,11 +562,41 @@ class Pggd_Settings {
 					?>
 				</p>
 			<?php endif; ?>
+			<?php if ( '' !== $detail ) : ?>
+				<?php
+				/*
+				 * cURL の英語エラーメッセージ等がそのまま入るため、主表示には出さない
+				 * （読んでも次の行動に結びつかず、管理者を不安にさせるだけのため）。
+				 * 技術的な詳細として見たい人だけが開ける従属的な位置に下げる。
+				 */
+				?>
+				<details class="pggd-diagnosis-detail">
+					<summary><?php esc_html_e( '技術的な詳細を表示', 'pageguard' ); ?></summary>
+					<p><code><?php echo esc_html( $detail ); ?></code></p>
+				</details>
+			<?php endif; ?>
 		</div>
 		<?php
 		if ( 'success' !== $status ) {
 			self::render_htaccess_snippet();
 		}
+	}
+
+	/**
+	 * 「まだ診断を実行していません」の通知を出力する。
+	 *
+	 * render_diagnosis_result() の「診断できず」（実行したが判定できなかった）とは
+	 * 意味が異なるため、文言と notice の色を分けている。
+	 *
+	 * @return void
+	 */
+	private static function render_diagnosis_not_run_notice() {
+		?>
+		<div class="notice inline notice-info pggd-diagnosis-result">
+			<p><strong><?php esc_html_e( 'まだ診断を実行していません。', 'pageguard' ); ?></strong></p>
+			<p class="description"><?php esc_html_e( '下のボタンから診断を実行してください。', 'pageguard' ); ?></p>
+		</div>
+		<?php
 	}
 
 	/**
@@ -732,6 +762,9 @@ class Pggd_Settings {
 		}
 
 		$token = sanitize_text_field( wp_unslash( $_GET['token'] ) );
+		// bin2hex( random_bytes( 16 ) ) の生成形式（16進32桁）どおりかだけを見る。
+		// Pggd_Lockout::KEY_PATTERN と偶然同じ形式だが、意味が違う値なので流用しない
+		// （Pggd_Lockout 側でキー形式を変えたときに、無関係なこちらまで巻き込まれないようにする）。
 		if ( ! preg_match( '/^[0-9a-f]{32}$/', $token ) ) {
 			return;
 		}
@@ -830,7 +863,25 @@ class Pggd_Settings {
 									<input type="hidden" name="action" value="<?php echo esc_attr( self::UNLOCK_ACTION ); ?>">
 									<input type="hidden" name="pggd_key" value="<?php echo esc_attr( $key ); ?>">
 									<?php wp_nonce_field( self::UNLOCK_ACTION . '_' . $key, 'pggd_unlock_nonce' ); ?>
-									<?php submit_button( __( '解除', 'pageguard' ), 'secondary small', 'submit', false ); ?>
+									<?php
+									/*
+									 * id は行ごとに一意にする（submit_button() は既定で $name＝'submit' を
+									 * id にするため、行が複数あると id が重複してしまう）。
+									 * aria-label も行ごとに変え、どのアクセス元の解除ボタンかを
+									 * 視覚情報なしでも判別できるようにする（誤操作コストのある操作のため）。
+									 */
+									submit_button(
+										__( '解除', 'pageguard' ),
+										'secondary small',
+										'submit',
+										false,
+										array(
+											'id'         => 'pggd_unlock_submit_' . $key,
+											/* translators: %s: ロックされているアクセス元（IP アドレス） */
+											'aria-label' => sprintf( __( '%s のロックを解除', 'pageguard' ), $record['ip'] ),
+										)
+									);
+									?>
 								</form>
 							</td>
 						</tr>
@@ -852,8 +903,11 @@ class Pggd_Settings {
 		}
 
 		$key = isset( $_POST['pggd_key'] ) ? sanitize_text_field( wp_unslash( $_POST['pggd_key'] ) ) : '';
-		// build_key() の形式（sha256 の先頭32文字＝16進32桁）以外は受け付けない。
-		if ( ! preg_match( '/^[0-9a-f]{32}$/', $key ) ) {
+		// Pggd_Lockout のレコードキー形式（sha256 の先頭32文字＝16進32桁）以外は受け付けない。
+		// unlock_by_key() 自身も同じ形式を検証するが、ここで弾けば不正な値で
+		// nonce 検証まで進めずに済む（check_admin_referer() は $key を使って
+		// アクション名を組み立てるため、先に形式を確かめておきたい）。
+		if ( ! preg_match( Pggd_Lockout::KEY_PATTERN, $key ) ) {
 			wp_die( esc_html__( '不正なリクエストです。', 'pageguard' ), '', array( 'response' => 400 ) );
 		}
 
@@ -901,7 +955,14 @@ class Pggd_Settings {
 			)
 		);
 		?>
-		<h2 class="pggd-settings-heading"><?php esc_html_e( '保護中のページ', 'pageguard' ); ?></h2>
+		<?php
+		/*
+		 * この見出しに id を振り、下のページングリンクの遷移先に # フラグメントとして付与する。
+		 * 1画面スクロール構成の一番下のセクションなので、付けないとページ送りのたびに
+		 * ページ全体がリロードされて h1 の先頭に戻ってしまい、毎回スクロールし直す羽目になる。
+		 */
+		?>
+		<h2 class="pggd-settings-heading" id="pggd-protected-pages"><?php esc_html_e( '保護中のページ', 'pageguard' ); ?></h2>
 		<p>
 			<?php esc_html_e( '現在 BASIC 認証で保護されている投稿の一覧です。対象の投稿タイプの設定を変更しても、既に保護を設定した投稿はここに表示され続けます。', 'pageguard' ); ?>
 			<?php esc_html_e( 'サイト表側の URL は、ログイン中の編集者でも認証をスキップしてしまうため、ここにはリンクしていません。内容の確認は編集画面のリンクからお願いします。', 'pageguard' ); ?>
@@ -957,7 +1018,7 @@ class Pggd_Settings {
 				echo wp_kses_post(
 					paginate_links(
 						array(
-							'base'    => add_query_arg( 'pggd_page', '%#%' ),
+							'base'    => add_query_arg( 'pggd_page', '%#%' ) . '#pggd-protected-pages',
 							'format'  => '',
 							'current' => $paged,
 							'total'   => (int) $query->max_num_pages,

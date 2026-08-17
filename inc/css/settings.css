@@ -65,6 +65,24 @@
 	border: 1px solid #dcdcde;
 }
 
+/* 技術的な詳細（cURL の生エラー等）。主表示より従属的に見えるよう控えめにする。 */
+.pggd-diagnosis-detail {
+	margin: 0.5em 0 0;
+}
+
+.pggd-diagnosis-detail summary {
+	cursor: pointer;
+	color: #50575e;
+}
+
+.pggd-diagnosis-detail p {
+	margin: 0.5em 0 0;
+}
+
+.pggd-diagnosis-detail code {
+	word-break: break-all;
+}
+
 /* ==========================================================================
    ロック中のアクセス元 / 保護中のページ（テーブル共通）
    ========================================================================== */
