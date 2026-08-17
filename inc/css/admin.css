@@ -77,23 +77,44 @@
 }
 
 /*
- * メディア直リンクの注意書き。
+ * 常設の但し書き（メディア直リンク／一覧からの除外）。
  * notice-* は状態に応じて出るメッセージに取っておく。常設の但し書きを
  * 同じ見た目にすると、行動を求めている案内と区別が付かなくなる。
  */
-#pggd_meta_box .pggd-media-note {
+#pggd_meta_box .pggd-media-note,
+#pggd_meta_box .pggd-visibility-note {
 	margin: 16px 0 0;
 	padding: 8px 12px;
 	border-left: 4px solid #c3c4c7;
 	background: #f6f7f7;
 }
 
-#pggd_meta_box .pggd-media-note p {
+#pggd_meta_box .pggd-media-note p,
+#pggd_meta_box .pggd-visibility-note p {
 	margin: 0 0 8px;
 }
 
-#pggd_meta_box .pggd-media-note p:last-child {
+#pggd_meta_box .pggd-media-note p:last-child,
+#pggd_meta_box .pggd-visibility-note p:last-child {
 	margin-bottom: 0;
+}
+
+/*
+ * 但し書きが2つ並ぶので、原理的に保護できない側（メディア直リンク）だけ
+ * ボーダーを警告色にして区別する。同じ見た目で並べると両方読み飛ばされる。
+ *
+ * コアの警告色 #dba617 は使わない。この箱の背景 #f6f7f7 に対して
+ * コントラスト比が約 2.1:1 しかなく、WCAG 2.1 の 1.4.11（非テキストコントラスト・3:1）に届かない。
+ * #996800 なら約 4.5:1 で余裕がある。
+ *
+ * 但し書きが3つ以上に増えたら、見出し（h3）とサイズ調整の CSS を入れること。
+ * 2つ・4段落までは、各ブロックの太字の導入文で辿れるので見出しは置かない。
+ * （コアの .metabox-holder .postbox > h3 は直接の子だけが対象でここには当たらず、
+ * 　ブラウザ既定の 1.17em bold＝約15px でメタボックスのタイトル 14px より大きくなるため、
+ * 　見出しを入れるならサイズ調整の CSS がセットで要る）
+ */
+#pggd_meta_box .pggd-media-note {
+	border-left-color: #996800;
 }
 
 /* 保存結果の通知内で、原因を箇条書きにする */

@@ -18,6 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once( dirname( __FILE__ ) . '/class-credentials.php' );
 require_once( dirname( __FILE__ ) . '/class-lockout.php' );
 require_once( dirname( __FILE__ ) . '/class-auth.php' );
+require_once( dirname( __FILE__ ) . '/class-visibility.php' );
 require_once( dirname( __FILE__ ) . '/class-meta-box.php' );
 
 /*-------------------------------------------*/
@@ -97,6 +98,7 @@ if ( ! function_exists( 'pggd_get_lockout_seconds' ) ) {
 /* 定義文が実行されるまで呼び出せない。init() より前に置くこと。
 /*-------------------------------------------*/
 Pggd_Auth::init();
+Pggd_Visibility::init();
 Pggd_Meta_Box::init();
 
 /*-------------------------------------------*/
@@ -163,14 +165,38 @@ if ( ! function_exists( 'pggd_render_dashboard_widget' ) ) {
 		<p><?php esc_html_e( 'ページごとに独立したユーザー名 / パスワードで BASIC 認証をかけられます。保護したいページの編集画面で設定してください。', 'pageguard' ); ?></p>
 		<p><?php esc_html_e( '初期設定では固定ページだけが対象です。投稿やカスタム投稿タイプの編集画面には設定欄が出ません。', 'pageguard' ); ?></p>
 
+		<?php
+		/*
+		 * 見出しは strong + br ではなく見出し要素で出す。
+		 * 段落が増えて構造が要る量になったので、支援技術でも項目単位で辿れるようにする。
+		 * ダッシュボードのウィジェット名が h2 なので、その下は h3 にする。
+		 */
+		?>
+		<h3><?php esc_html_e( 'ご注意', 'pageguard' ); ?></h3>
+		<?php
+		/*
+		 * 1文目は strong で強調する。ダッシュボードでは
+		 * コアの #dashboard-widgets h3 が font-weight: 400 を当てるため見出しが太字にならず、
+		 * さらにこのプラグインの CSS は post.php / post-new.php でしか読み込まれない。
+		 * 強調を CSS の追加読み込みではなくマークアップで担保する（メタボックス側とも表記が揃う）。
+		 */
+		?>
 		<p>
-			<strong><?php esc_html_e( 'ご注意', 'pageguard' ); ?></strong><br>
-			<?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?>
+			<strong><?php esc_html_e( 'メディアファイルへの直リンク（画像・PDF などのファイル URL への直接アクセス）は保護できません。', 'pageguard' ); ?></strong>
 			<?php esc_html_e( 'これらのファイルは WordPress を経由せず Web サーバーが直接返すためです。', 'pageguard' ); ?>
 		</p>
 
+		<h3><?php esc_html_e( 'サイト表側の一覧について', 'pageguard' ); ?></h3>
+		<?php
+		// 理由（キャッシュ経由の配布を避けるため）は README に置き、ここは事実と対処だけにする。
+		?>
 		<p>
-			<strong><?php esc_html_e( 'サポート', 'pageguard' ); ?></strong><br>
+			<?php esc_html_e( '保護中のページは、サイト内の検索結果・アーカイブ一覧・フィード・サイトマップ・REST API から外れます。', 'pageguard' ); ?>
+			<?php esc_html_e( 'ログイン中でもサイト表側には表示されないため、保護中のページを探すときは管理画面の固定ページ一覧をご利用ください。', 'pageguard' ); ?>
+		</p>
+
+		<h3><?php esc_html_e( 'サポート', 'pageguard' ); ?></h3>
+		<p>
 			<?php
 			printf(
 				/* translators: 1: 開発のご依頼ページへのリンク開始タグ, 2: リンク終了タグ, 3: 開発を支援ページへのリンク開始タグ, 4: リンク終了タグ */

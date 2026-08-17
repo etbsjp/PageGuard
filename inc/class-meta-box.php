@@ -426,6 +426,31 @@ class Pggd_Meta_Box {
 				</tbody>
 			</table>
 
+			<?php
+			/*
+			 * 一覧から外れることは、保護をかけた本人がいちばん驚く副作用なので、
+			 * 保護を設定するこの画面に常設で置く。ダッシュボードウィジェットは
+			 * 閉じられる・表示オプションで消せるため、伝達を任せきれない。
+			 */
+			?>
+			<div class="pggd-visibility-note">
+				<p>
+					<?php
+					// いちばん驚かれるのは「ログイン中でも消える」ことなので、導入文に入れる。
+					?>
+					<strong><?php esc_html_e( '保護中のページは、ログイン中でもサイト表側の一覧から外れます。', 'pageguard' ); ?></strong>
+					<?php esc_html_e( 'サイト内の検索結果・アーカイブ一覧・フィード・サイトマップ・REST API に表示されなくなります。', 'pageguard' ); ?>
+					<?php
+					// 「ページが消えた」と誤解されるのはこの画面なので、残っていることをここで言う。
+					?>
+					<?php esc_html_e( 'ページそのものは残っていますので、探すときは管理画面の固定ページ一覧をご利用ください（管理画面の一覧・検索・編集画面には今までどおり表示されます）。', 'pageguard' ); ?>
+				</p>
+				<p>
+					<?php esc_html_e( 'ナビゲーションメニューに登録している場合は、メニュー側からリンクを外してください。', 'pageguard' ); ?>
+					<?php esc_html_e( 'メニューの項目は自動では消えません。', 'pageguard' ); ?>
+				</p>
+			</div>
+
 			<div class="pggd-media-note">
 				<p>
 					<strong><?php esc_html_e( 'メディアファイルへの直リンクは保護できません。', 'pageguard' ); ?></strong>
@@ -528,6 +553,12 @@ class Pggd_Meta_Box {
 	 *
 	 * 成功系は snackbar（数秒で消える）にする。コアの「更新しました」と同じ扱い。
 	 * 警告とエラーは、見落とすと事故になるので上部の固定通知に残す。
+	 *
+	 * この振り分けは「取り返しのつかない変化ほど画面に残す」と一致している。
+	 * 解除（unprotected）はパスワードを削除する不可逆な操作で、結果がどこにも
+	 * 残らないため warning＝固定通知。保護（protected）は可逆で、結果も
+	 * メタボックスの状態表示と常設の但し書きに残るため success＝snackbar。
+	 * 通知の種別を変えるときは、この対応が崩れていないか確認すること。
 	 *
 	 * @param int $post_id 投稿ID。
 	 * @return array id / status / text / type を持つ配列の配列。
@@ -915,7 +946,13 @@ class Pggd_Meta_Box {
 			'protected'                 => array(
 				'type'  => 'success',
 				'class' => 'notice-success',
-				'text'  => __( 'BASIC 認証で保護しました。このページの閲覧にはユーザー名とパスワードが必要になります。', 'pageguard' ),
+				/*
+				 * 成功系は snackbar（数秒で消える）で出るため、読み切れる長さに収める。
+				 * 一覧から外れることは、この保存操作で初めて起きる変化なので触れておくが、
+				 * 詳しい説明はメタボックスの常設の但し書き（pggd-visibility-note）が持つ。
+				 */
+				'text'  => __( 'BASIC 認証で保護しました。', 'pageguard' )
+					. __( '閲覧にはユーザー名とパスワードが必要になり、サイト表側の一覧には表示されなくなります。', 'pageguard' ),
 			),
 			'password_changed'          => array(
 				'type'  => 'success',
@@ -930,7 +967,11 @@ class Pggd_Meta_Box {
 			'unprotected'               => array(
 				'type'  => 'warning',
 				'class' => 'notice-warning',
-				'text'  => __( 'BASIC 認証を解除しました。このページは URL を知っている人なら誰でも閲覧できる状態です。', 'pageguard' ),
+				// 保護時と対になるよう、一覧へ戻ることも書く（状態遷移が両方向で分かるように）。
+				// 警告系は消えない固定通知なので、保護時より長くても読み飛ばされない。
+				'text'  => __( 'BASIC 認証を解除しました。', 'pageguard' )
+					. __( 'このページは URL を知っている人なら誰でも閲覧できる状態です。', 'pageguard' )
+					. __( 'サイト表側の一覧にも再び表示されるようになります。', 'pageguard' ),
 			),
 			'password_whitespace'       => array(
 				'type'  => 'warning',
