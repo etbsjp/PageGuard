@@ -104,6 +104,14 @@ class Pggd_Lockout {
 	const WRITE_DB_ERROR = -1;
 
 	/**
+	 * build_key() が返すレコードキーの形式（sha256 の先頭32文字＝16進32桁の小文字）。
+	 *
+	 * unlock_by_key() 自身の検証と、呼び出し側（設定画面）の検証の両方で使い、
+	 * 形式の定義を1箇所に集約する。
+	 */
+	const KEY_PATTERN = '/^[0-9a-f]{32}$/';
+
+	/**
 	 * 接続元 IP アドレスを返す。
 	 *
 	 * REMOTE_ADDR だけを見る。X-Forwarded-For などのリクエストヘッダは
@@ -609,5 +617,49 @@ class Pggd_Lockout {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * 指定したキーのレコードを削除する（設定画面からの手動解除用）。
+	 *
+	 * キーは get_all_records() が返す配列のキー（アクセス元のハッシュ）をそのまま使うこと。
+	 * 呼び出し側で IP を再度ハッシュ化して照合する設計にはしていない。
+	 * normalize_ip() と wp_salt() が使う値がどちらかでもズレると、
+	 * 「解除できない」または「別の送信元を解除してしまう」事故になるため。
+	 *
+	 * @param string $key get_all_records() が返すレコードのキー。
+	 * @return bool 削除できた（または元々そのキーが無かった）場合 true。
+	 *              書き込みに失敗した場合は false。
+	 */
+	public static function unlock_by_key( $key ) {
+		$key = (string) $key;
+		// 呼び出し側の検証を信用せず、この関数自身でも形式を確かめる（自己完結にする）。
+		if ( ! preg_match( self::KEY_PATTERN, $key ) ) {
+			return false;
+		}
+
+		for ( $attempt = 0; $attempt < self::WRITE_RETRIES; $attempt++ ) {
+			$raw     = self::read_raw();
+			$records = self::decode( $raw );
+
+			if ( ! isset( $records[ $key ] ) ) {
+				// 既に無い（他のリクエストが先に消した、期限切れで掃除された等）。
+				return true;
+			}
+
+			unset( $records[ $key ] );
+			$records = self::prune( $records );
+
+			$result = self::write( $raw, $records );
+
+			if ( self::WRITE_OK === $result ) {
+				return true;
+			}
+			if ( self::WRITE_DB_ERROR === $result ) {
+				return false;
+			}
+		}
+
+		return false;
 	}
 }

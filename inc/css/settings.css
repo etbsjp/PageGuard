@@ -1,0 +1,102 @@
+/**
+ * PageGuard: 設定画面（settings_page_pageguard）用スタイル。
+ *
+ * インラインスタイルを増やさないよう、見た目の調整はここへ集約する。
+ */
+
+/* ==========================================================================
+   全体レイアウト
+   ========================================================================== */
+
+.pggd-settings .pggd-settings-heading {
+	margin-top: 2em;
+}
+
+/* コアの .wp-header-end が無い自作画面のため、区切りは明示的な hr で作る。 */
+.pggd-settings-divider {
+	margin: 2em 0;
+	border: none;
+	border-top: 1px solid #dcdcde;
+}
+
+/* ==========================================================================
+   HTTPS 警告
+   ========================================================================== */
+
+.pggd-https-warning p {
+	margin: 0.5em 0;
+}
+
+/* ==========================================================================
+   保護の基本設定（チェックボックス群）
+   ========================================================================== */
+
+.pggd-settings .pggd-checkbox-row {
+	margin: 0 0 8px;
+}
+
+/* ==========================================================================
+   受信診断
+   ========================================================================== */
+
+.pggd-diagnosis-result {
+	margin: 1em 0;
+}
+
+.pggd-diagnosis-result p {
+	margin: 0.5em 0;
+}
+
+.pggd-htaccess-note {
+	margin: 1em 0 1.5em;
+	padding: 8px 12px;
+	border-left: 4px solid #c3c4c7;
+	background: #f6f7f7;
+}
+
+.pggd-htaccess-note p {
+	margin: 0 0 8px;
+}
+
+.pggd-htaccess-note pre {
+	overflow-x: auto;
+	padding: 12px;
+	background: #fff;
+	border: 1px solid #dcdcde;
+}
+
+/* 技術的な詳細（cURL の生エラー等）。主表示より従属的に見えるよう控えめにする。 */
+.pggd-diagnosis-detail {
+	margin: 0.5em 0 0;
+}
+
+.pggd-diagnosis-detail summary {
+	cursor: pointer;
+	color: #50575e;
+}
+
+.pggd-diagnosis-detail p {
+	margin: 0.5em 0 0;
+}
+
+.pggd-diagnosis-detail code {
+	word-break: break-all;
+}
+
+/* ==========================================================================
+   ロック中のアクセス元 / 保護中のページ（テーブル共通）
+   ========================================================================== */
+
+.pggd-locked-ips-table td,
+.pggd-protected-pages-table td {
+	vertical-align: middle;
+}
+
+/* 「解除」ボタンのフォームは、行の高さを広げないようインラインで置く。 */
+.pggd-locked-ips-table form {
+	margin: 0;
+}
+
+.pggd-pagination {
+	margin-top: 1em;
+}

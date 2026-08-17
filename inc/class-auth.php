@@ -63,6 +63,21 @@ class Pggd_Auth {
 	}
 
 	/**
+	 * このリクエストに BASIC 認証のヘッダーが「届いているか」だけを返す。
+	 *
+	 * 資格情報の値そのものは見ない。設定画面の受信診断（Pggd_Settings）が、
+	 * 環境差の吸収（docs/spec.md 4）が効いているかどうかだけを確かめるために使う。
+	 * ここでの判定条件は get_submitted_credentials() が資格情報ありと見なす条件と
+	 * 常に一致させること。ここでは「届いている」と言うのに、認証本体では
+	 * 「届いていない」と判定する、という食い違いを避けるため。
+	 *
+	 * @return bool ヘッダーが届いていれば true。
+	 */
+	public static function has_incoming_auth_header() {
+		return null !== self::get_submitted_credentials();
+	}
+
+	/**
 	 * フックを登録する。
 	 *
 	 * @return void
