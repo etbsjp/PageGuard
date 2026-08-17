@@ -595,9 +595,16 @@ class Pggd_Visibility {
 	/**
 	 * いま表示中で、かつ認証の判定を通過済みの単一投稿のIDを返す。
 	 *
-	 * template_redirect が済んでいることを条件にしている。
-	 * Pggd_Auth はこのフックで 401 を返すため、それより前の段階では
-	 * 「保護中のページを表示しようとしている」だけで、まだ通過していない。
+	 * 「通過済みかどうか」は Pggd_Auth::is_authorized() に問い合わせる。
+	 *
+	 * 以前は did_action( 'template_redirect' ) の有無で代用していたが、
+	 * do_action() はコールバックを1つも実行する前に実行済みカウンタを
+	 * 進めてしまうため、他プラグイン・テーマが template_redirect に
+	 * Pggd_Auth::maybe_require_auth()（優先度1）より早い優先度（0以下）で
+	 * フックしてコメントクエリを実行すると、401 判定が確定する前から
+	 * 「認証済み」と誤判定していた（fail-open の穴）。
+	 * Pggd_Auth 側で判定が確定した投稿IDだけを見るこの実装は、
+	 * template_redirect のフック優先度に依存しない。
 	 *
 	 * @return int 投稿ID。該当しなければ 0。
 	 */
@@ -605,13 +612,16 @@ class Pggd_Visibility {
 		if ( self::is_rest_request() || self::is_cli_request() || is_admin() ) {
 			return 0;
 		}
-		if ( ! did_action( 'template_redirect' ) ) {
-			return 0;
-		}
 		if ( ! is_singular() ) {
 			return 0;
 		}
-		return (int) get_queried_object_id();
+
+		$post_id = (int) get_queried_object_id();
+		if ( ! Pggd_Auth::is_authorized( $post_id ) ) {
+			return 0;
+		}
+
+		return $post_id;
 	}
 
 	/**

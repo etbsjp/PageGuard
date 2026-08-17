@@ -17,6 +17,52 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Pggd_Auth {
 
 	/**
+	 * このリクエストで「ブロックせず抜けた」と確定した投稿IDの集合。
+	 *
+	 * Pggd_Visibility::get_authorized_singular_id() が、いま表示中の
+	 * 単一ページ自身をコメント等の除外例外にしてよいかを判定するために参照する。
+	 *
+	 * 以前は did_action( 'template_redirect' ) の有無で代用していたが、
+	 * do_action() はコールバックを1つも実行する前に実行済みカウンタを進めるため、
+	 * 他プラグイン・テーマが template_redirect に自分より早い優先度（0以下）で
+	 * フックしてコメントクエリ（get_comments() 等）を実行すると、
+	 * maybe_require_auth()（優先度1）がまだ 401 判定を終えていない時点で
+	 * 「認証済み」と誤判定されてしまう fail-open の穴だった。
+	 * ここでは実行順に依存せず、判定が実際に確定した「その場」でだけ立てる。
+	 *
+	 * @var array<int, bool> 投稿IDをキーにした真偽値。
+	 */
+	private static $authorized_post_ids = array();
+
+	/**
+	 * 指定した投稿の表示を、このリクエストで認証済み（またはブロック対象外）
+	 * として記録する。
+	 *
+	 * maybe_require_auth() が保護しない・またはブロックせず抜けると
+	 * 確定した箇所（各 return の直前）でのみ呼ぶこと。
+	 *
+	 * @param int $post_id 認証済みと判明した投稿ID。
+	 * @return void
+	 */
+	private static function mark_authorized( $post_id ) {
+		self::$authorized_post_ids[ (int) $post_id ] = true;
+	}
+
+	/**
+	 * 指定した投稿が、このリクエストで認証済み（またはブロック対象外）と
+	 * 確定しているかどうかを返す。
+	 *
+	 * Pggd_Visibility からも参照するため public にしている。
+	 * template_redirect のフック優先度に依存しない判定にするための入口。
+	 *
+	 * @param int $post_id 判定する投稿ID。
+	 * @return bool 認証済みなら true。
+	 */
+	public static function is_authorized( $post_id ) {
+		return isset( self::$authorized_post_ids[ (int) $post_id ] );
+	}
+
+	/**
 	 * フックを登録する。
 	 *
 	 * @return void
@@ -98,6 +144,8 @@ class Pggd_Auth {
 		// 対象投稿タイプの設定（pggd_post_types）はメタボックスを出す範囲の設定であって、
 		// これを認証側の条件にすると、設定変更だけで保護済みページが素通しになってしまう。
 		if ( ! Pggd_Credentials::is_protected( $target_id ) ) {
+			// ブロック対象外と確定。
+			self::mark_authorized( $post->ID );
 			return;
 		}
 
@@ -112,6 +160,8 @@ class Pggd_Auth {
 
 		// その投稿の編集権限を持つログインユーザーは認証をスキップする（docs/spec.md 6）。
 		if ( is_user_logged_in() && current_user_can( 'edit_post', $target_id ) ) {
+			// 編集権限による認証スキップが確定。
+			self::mark_authorized( $post->ID );
 			return;
 		}
 
@@ -135,6 +185,8 @@ class Pggd_Auth {
 			// 「資格情報を知っているページへ成功しに行く」だけで
 			// 総当たりの回数制限を回避できてしまう。
 			Pggd_Lockout::clear( $ip, $target_id );
+			// 資格情報の検証成功による認証が確定。
+			self::mark_authorized( $post->ID );
 			return;
 		}
 
