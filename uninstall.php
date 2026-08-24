@@ -22,7 +22,12 @@
  * ここでは参照できない（`uninstall.php` の実行時点でプラグイン本体は読み込まれていない）ため、
  * オプション名は文字列リテラルで直接指定する。
  *
- * このプラグインに cron（`wp_schedule_event` 等）は無いため `wp_unschedule_hook()` は不要。
+ * 自前の cron 登録（`wp_schedule_event()`）は行っていない。同梱の plugin-update-checker（PUC。
+ * 更新チェックを行うライブラリ）が更新チェック用の cron を登録しているが、PUC 自身が
+ * `register_deactivation_hook()` で有効化解除時に `wp_clear_scheduled_hook()` を実行して
+ * 自己クリーンアップするため、管理画面からの削除や `wp plugin uninstall` などの標準的な
+ * 削除導線（必ず有効化解除を経由する）では、この `uninstall.php` の実行時点で PUC の cron は
+ * 既に消えている。したがってこのファイルで `wp_unschedule_hook()` を呼ぶ必要は無い。
  *
  * @package pageguard
  */

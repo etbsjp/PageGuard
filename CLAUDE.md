@@ -37,7 +37,10 @@ etbs のプラグイン共通ルールと既知の罠は `~/.claude/etbs-plugin-
 - **消す** … オプション `pggd_lockouts`（ロックアウト記録。上限200件・非 autoload）、
   `pggd_diagnosis_result`（受信診断の結果。再実行できる）
 
-★ cron は持っていないので `wp_unschedule_hook()` は不要。独自テーブルも無い。
+★ 自前の cron 登録（`wp_schedule_event()`）は無い。同梱の PUC（plugin-update-checker。更新チェック
+ライブラリ）が更新チェック用の cron を持つが、PUC 自身が有効化解除時に `wp_clear_scheduled_hook()` で
+自己クリーンアップするため、標準的な削除導線（必ず有効化解除を経由する）では `uninstall.php` 実行時点で
+残っていない。よって `wp_unschedule_hook()` は不要。独自テーブルも無い。
 
 ★ 配布8本のうち「消す」に該当するのは editlock（テーブルと cron）とこのプラグイン（一時状態の
 オプション2つ）の2本だけ。他の6本は「何も消さない」が正しい。**横並びで揃えにこないこと。**
