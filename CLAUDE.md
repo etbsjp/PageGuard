@@ -16,6 +16,32 @@ etbs のプラグイン共通ルールと既知の罠は `~/.claude/etbs-plugin-
 | 設定画面の画面ID | `settings_page_pageguard`（`add_options_page` を使うため） |
 | リポジトリ / ブランチ | `etbsjp/PageGuard` の **`dist` 一本**（`main` は無い） |
 
+## アンインストール
+
+★ `uninstall.php` の方針は**案A**（task-queue #108）。判定は3分類。
+
+| 利用者が作ったコンテンツ（投稿・投稿メタ） | 利用者が設定した値（オプション） | 一時状態・自分が仕掛けた cron |
+|---|---|---|
+| **消さない** | **消さない** | **消す** |
+
+理由は害の非対称性。消さないことの害は「DB に少量のレコードが残る」だけだが、
+消すことの害は復旧不可能。迷ったら残す側に倒す。
+
+このプラグインでの当てはめ:
+
+- **残す** … 投稿メタ `_pggd_protected` / `_pggd_credentials`（保護設定。消すと保護ページが
+  一斉に閲覧可能になり、パスワードはハッシュ保存なので復元できない）、オプション
+  `pggd_post_types` / `pggd_max_attempts` / `pggd_lockout_seconds`（設定画面で利用者が
+  設定した値。`register_setting()` で登録しており保存はコアが行うため `update_option` の
+  grep では見つからない）、TTL 付き transient（自然消滅する）
+- **消す** … オプション `pggd_lockouts`（ロックアウト記録。上限200件・非 autoload）、
+  `pggd_diagnosis_result`（受信診断の結果。再実行できる）
+
+★ cron は持っていないので `wp_unschedule_hook()` は不要。独自テーブルも無い。
+
+★ 配布8本のうち「消す」に該当するのは editlock（テーブルと cron）とこのプラグイン（一時状態の
+オプション2つ）の2本だけ。他の6本は「何も消さない」が正しい。**横並びで揃えにこないこと。**
+
 ## 動作要件
 
 - 外部依存なし
