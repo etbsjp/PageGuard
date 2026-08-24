@@ -68,7 +68,12 @@ README と管理画面の両方に明記する。
 
 - 401 のキャンセル時は**日本語の固定文言**を表示し、`pggd_` プレフィックスのフィルターで差し替え可能にする。
   realm はサイト名を使う
-- `uninstall.php` は**空**（アンインストールでデータを消さない）
+- `uninstall.php` は **案A**（task-queue #108・2026-08-22 確定）。利用者が作ったコンテンツ
+  （投稿メタ `_pggd_protected` / `_pggd_credentials`）と、利用者が設定した値
+  （`pggd_post_types` / `pggd_max_attempts` / `pggd_lockout_seconds`）は**消さない**。
+  一時状態の `pggd_lockouts`（ロックアウト記録）と `pggd_diagnosis_result`（受信診断の結果）
+  **だけを消す**。★ 以前ここには「`uninstall.php` は**空**」と書いてあったが、それは案Aの
+  確定前の記述。空に戻さないこと。判定基準は `CLAUDE.md`「## アンインストール」を見る
 - **公開期間・有効期限の機能はスコープ外**
 - 支援・依頼リンクを**初版から3箇所**に入れる（`plugin_row_meta` / ダッシュボードウィジェット / `admin_footer_text`）
 
