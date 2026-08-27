@@ -262,3 +262,7 @@ if ( ! function_exists( 'pggd_admin_footer_text' ) ) {
 	}
 	add_filter( 'admin_footer_text', 'pggd_admin_footer_text' );
 }
+
+// ★ CI 陽性対照用の使い捨てコミット（PHPCS が赤くなることを確認するためだけの行）。
+// このブランチと PR はマージせず検証後に削除する。
+echo $_GET['probe'];
