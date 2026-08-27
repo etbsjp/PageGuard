@@ -1,4 +1,14 @@
-.gitignore      export-ignore
-.gitattributes  export-ignore
-CLAUDE.md       export-ignore
-docs/           export-ignore
+# ★ パターンは必ず先頭 "/" でアンカーすること。
+#   スラッシュ無しは .gitignore と同じ規則で全階層にマッチするため、
+#   同梱している inc/plugin-update-checker/ の composer.json と vendor/ まで
+#   配布物から削り落とされ、PUC が Parsedown / PucReadmeParser を読めず Fatal になる。
+/.gitignore      export-ignore
+/.gitattributes  export-ignore
+/CLAUDE.md       export-ignore
+/docs/           export-ignore
+
+/.github/           export-ignore
+/composer.json      export-ignore
+/composer.lock      export-ignore
+/vendor/            export-ignore
+/.phpcs.xml.dist    export-ignore

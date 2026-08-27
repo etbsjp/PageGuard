@@ -1,0 +1,120 @@
+name: CI
+
+# PR に対して無条件に実行する（run-ci 等のラベル条件は付けない）。
+# ★ dist への直 push でも構文チェックだけは走らせる。
+#   dist は PUC の配信元で、版数上げは人が直接 push する運用のため、
+#   PR を通らない変更がそのまま利用者へ配られる経路が残っていた。
+on:
+  pull_request:
+  push:
+    branches:
+      - dist
+
+# 既定を最小権限にする。検査しかしないので読み取りだけで足りる。
+permissions:
+  contents: read
+
+# 同じ PR に続けて push されたら古い実行を打ち切る。
+# ★ push イベントでは pull_request.number が空になるため github.ref で代替する。
+#   これが無いと、すべての push が同じグループに入って互いを打ち切る。
+# ★ dist への push は打ち切らない。途中のコミットの失敗を見逃さないため。
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # 追跡されている全 .php を PHP 7.4 / 8.3 の両方で構文チェックする。
+  php-lint:
+    name: php -l (PHP ${{ matrix.php-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['7.4', '8.3']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up PHP ${{ matrix.php-version }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-version }}
+          coverage: none
+          tools: none
+
+      - name: Run php -l on all tracked .php files
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r file; do
+            php -l "$file" || status=1
+          done < <(git ls-files '*.php')
+          exit "$status"
+
+  # WordPress-Extra を PR の差分行にのみ適用する（phpcs-changed）。
+  # 既存コードの指摘は対象外（issue #2 のスコープ外）で、新しく追加・変更された行のみを見る。
+  # ★ push には比較の基準になるブランチが無いので PR のときだけ走らせる。
+  phpcs-changed:
+    name: PHPCS (WordPress-Extra, changed lines)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR head with full history
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+          tools: composer
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.lock') }}
+
+      - name: Install Composer dependencies (dev tooling only; not part of the distributed plugin)
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      # ★ PR 由来の値（ブランチ名・ファイル名）は env 経由でのみ渡す。
+      #   run: に ${{ }} で直接展開すると、PR 側が名前にシェルのメタ文字を仕込めるため
+      #   runner 上で任意のコマンドが走る（public repo なので誰でも PR を出せる）。
+      - name: Ensure base branch is available for diffing
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: git fetch --no-tags origin "$BASE_REF"
+
+      - name: Determine changed PHP files
+        id: changed
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          git diff --name-only --diff-filter=ACMR "origin/$BASE_REF...HEAD" -- '*.php' > changed-php.txt
+          if [ -s changed-php.txt ]; then
+            echo "has_files=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_files=0" >> "$GITHUB_OUTPUT"
+          fi
+          echo "--- changed .php ---"
+          cat changed-php.txt
+
+      - name: Run phpcs-changed (WordPress-Extra)
+        if: steps.changed.outputs.has_files == '1'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          # ファイル名は引数配列として渡す。文字列展開しない。
+          mapfile -t files < changed-php.txt
+          vendor/bin/phpcs-changed --git --git-base "origin/$BASE_REF" -s \
+            --standard=./.phpcs.xml.dist "${files[@]}"
+
+      - name: No PHP files changed
+        if: steps.changed.outputs.has_files == '0'
+        run: echo "PR に .php の変更がないため PHPCS はスキップしました。"

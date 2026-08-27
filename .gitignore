@@ -53,3 +53,6 @@ CLAUDE.local.md
 
 # macOS
 .DS_Store
+
+# composer install の生成物（CI 用の開発依存。配布物には含めない）
+/vendor/
