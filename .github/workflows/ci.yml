@@ -110,6 +110,7 @@ jobs:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
+          # ファイル名は引数配列として渡す。文字列展開しない。
           mapfile -t files < changed-php.txt
           vendor/bin/phpcs-changed --git --git-base "origin/$BASE_REF" -s \
             --standard=./.phpcs.xml.dist "${files[@]}"
