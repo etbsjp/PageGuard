@@ -52,7 +52,11 @@ jobs:
           exit "$status"
 
   # WordPress-Extra を PR の差分行にのみ適用する（phpcs-changed）。
-  # 既存コードの指摘は対象外（issue #2 のスコープ外）で、新しく追加・変更された行のみを見る。
+  # ★ 既存コードの指摘は直さない方針なので、新しく追加・変更された行のみを見る。
+  #   dist は配信元で、整形のための版数上げ＝配信を起こしたくないため。
+  #   経緯: https://github.com/etbsjp/widget-shortcode-tools/issues/2 （このワークフローの原本）
+  # ★ このファイルは7本の repo へコピーされる。issue の参照は必ず完全 URL で書くこと。
+  #   ベアの #NN はコピー先で「その repo の #NN」として解決され、無関係の PR を指す。
   # ★ push には比較の基準になるブランチが無いので PR のときだけ走らせる。
   phpcs-changed:
     name: PHPCS (WordPress-Extra, changed lines)
