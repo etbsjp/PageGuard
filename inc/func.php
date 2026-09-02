@@ -168,7 +168,7 @@ if ( ! function_exists( 'pggd_add_dashboard_widget' ) ) {
 		}
 		wp_add_dashboard_widget(
 			'pggd_dashboard_widget',
-			'PageGuard',
+			'ETBS PageGuard',
 			'pggd_render_dashboard_widget'
 		);
 	}

@@ -136,8 +136,8 @@ class Pggd_Settings {
 	 */
 	public static function register_page() {
 		add_options_page(
-			__( 'PageGuard 設定', 'pageguard' ),
-			__( 'PageGuard', 'pageguard' ),
+			__( 'ETBS PageGuard 設定', 'pageguard' ),
+			__( 'ETBS PageGuard', 'pageguard' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( __CLASS__, 'render_page' )
