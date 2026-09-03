@@ -54,6 +54,30 @@ etbs のプラグイン共通ルールと既知の罠は `~/.claude/etbs-plugin-
 - **他のプラグインと横並びで揃えない。** 実下限はプラグインごとに違う
 - **PHP 8 専用構文を使わない。** アロー関数以降の記法・名前付き引数・`match`・コンストラクタプロモーション・`str_contains` 等は不可
 - 実装後は **PHP 7.4 実バイナリで `php -l`** を全ファイルに通す（パスは `CLAUDE.local.md`）
+- **ヘッダの `Requires at least` / `Requires PHP` を変更したときは、利用者向けの記述も
+  同時に見直すこと。該当は2箇所ある。**
+  - `readme.txt` の **`= 動作環境 =`**（`* PHP 7.4 以上` と
+    `WordPress のバージョン下限は設けていません。`）
+  - `README.md` の **`## 動作要件`** の表（`| PHP | 7.4 以上 |`）
+
+  ★★ **見落としやすいのは `readme.txt` のほう。** この散文は `== Description ==` 配下にあり、
+  plugin-update-checker が `sections` としてそのまま渡すため
+  （`inc/plugin-update-checker/Puc/v5p5/Vcs/PluginUpdateChecker.php:183-185` の
+  `$pluginInfo->sections = array_merge( $pluginInfo->sections, $readme['sections'] )`）、
+  **管理画面の「詳細を表示」モーダルに出る＝ `README.md` より利用者の目に触れる。**
+  `README.md` も `export-ignore` されておらず配布 zip に含まれるが、こちらは zip を開くか
+  GitHub を見ないと読まれない。
+
+  ★ **`Requires at least` については `README.md` に対応する記述が現状「無い」。**
+  `README.md` に WordPress のバージョン要件を述べた行は1つも無いので、
+  「該当箇所を見に行ったが無かった」を「見直し済み」と取り違えないこと。足すなら表に行を起こす
+  （`ordermemo` の `README.md` には同趣旨の一文がある）。
+
+  揃えないまま放置すると、次に見た人がどちらが正しいか分からず、利用者向けの記述に合わせて
+  ヘッダへ過剰宣言を書き戻す方向に動きかねない。
+
+  ★ **行番号で指さないこと。** 1行入れば即ズレる。`excelrange` / `ordermemo` の同じ節は
+  節名で指している（ただし向こうの見出しは「必要環境」で、このリポジトリは `## 動作要件`）。
 
 ## 絶対にやってはいけないこと
 
