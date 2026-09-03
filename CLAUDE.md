@@ -96,8 +96,11 @@ third-party action をタグ固定にしている判断・陽性対照・配布�
 - **既存指摘の基準値: 29 ERROR / 49 WARNING**（2026-08-28 実測・`WordPress-Extra`）。
   ★ 測り直すときは `vendor/bin/phpcs --standard=./.phpcs.xml.dist --report=summary $(git ls-files '*.php')`
   の形でのみ行う。素の phpcs は `.gitignore` を尊重しない
-- **`Requires PHP: 7.4` を宣言している。** 置き場は `pageguard.php` の1箇所だけ（`readme.txt` は無い）。
-  CI の matrix `['7.4','8.3']` と**一致している状態を守ること**（片方だけ動かさない）
+- **`Requires PHP: 7.4` を宣言している。** 置き場は **`pageguard.php:6` と `readme.txt:5` の2箇所**。
+  同梱の plugin-update-checker（PUC）は readme 側の値でヘッダを上書きする仕様のため、**片方だけ
+  変更すると配信メタデータがズレる。必ず同時に変更すること。** CI の matrix `['7.4','8.3']`
+  （`.github/workflows/ci.yml`）と合わせて**3箇所を一致させた状態を守ること**（どれか1つだけ
+  動かさない）
 - **原本との差は `composer.json` の `name`**（`etbsjp/pageguard` に改名し、`composer.lock` の
   `content-hash` も再生成済み）。★ **原本の `composer.lock` をコピーで上書きしないこと** ―
   落ちずに警告だけ出て完走し、`composer update` を促されて上の基準値が静かにずれる
